@@ -1,13 +1,14 @@
-Ask Jordan Core v1.3.0
+Ask Jordan Core v1.4.0
 
-New:
-- Smarter Arabic/English local search normalization.
-- Price range, min/max, compact 7k/7 ألف parsing.
-- Governorate and category alias detection.
-- Relevance scoring and ranked results.
-- Zero-result suggestions.
-- Deep links using #ad-ID.
-- Related ads in details.
-- Basic SEO/Open Graph metadata.
+التحديثات:
+- نظام المفضلة محليًا على الجهاز.
+- زر حفظ على بطاقات الإعلانات وداخل صفحة التفاصيل.
+- قسم للمفضلة داخل صفحة الحساب.
+- صفحة بائع تعرض الاسم وعدد الإعلانات النشطة وتاريخ الانضمام عند توفره.
+- عرض جميع إعلانات البائع داخل نافذة مستقلة.
+- أزرار اتصال وواتساب داخل ملف البائع.
+- تحسين صفحة تفاصيل الإعلان بإضافة حفظ وملف البائع.
+- الحفاظ على البحث الذكي والنشر والصور والتعديل والحذف من v1.3.0.
 
-Upload the ZIP root directly to Cloudflare Pages.
+طريقة النشر:
+ارفع محتويات هذا المجلد إلى جذر مستودع GitHub. Cloudflare سيقوم بالنشر تلقائيًا.
