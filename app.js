@@ -3,6 +3,7 @@ const sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
 const $=s=>document.querySelector(s);
 let session=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false;
 let favorites=new Set(JSON.parse(localStorage.getItem('askJordanFavorites')||'[]').map(Number));
+let analytics=JSON.parse(localStorage.getItem('askJordanAnalytics')||'{}');
 const phoneToEmail=p=>`${String(p).replace(/\D/g,'')}@users.askjordan.com`;
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const money=v=>Number(v)?`${Number(v).toLocaleString('ar-JO')} د.أ`:'السعر عند التواصل';
@@ -10,6 +11,12 @@ const waLink=p=>`https://wa.me/962${String(p||'').replace(/\D/g,'').replace(/^0/
 const normalizeImage=x=>x?{...x,image_url:x.image_url||x.url||''}:x;
 const saveFavorites=()=>localStorage.setItem('askJordanFavorites',JSON.stringify([...favorites]));
 const isFavorite=id=>favorites.has(Number(id));
+const saveAnalytics=()=>localStorage.setItem('askJordanAnalytics',JSON.stringify(analytics));
+function trackAdAction(id,action){
+  id=String(id);analytics[id]=analytics[id]||{views:0,whatsapp:0,calls:0,shares:0};
+  analytics[id][action]=(analytics[id][action]||0)+1;saveAnalytics();
+}
+function adAnalytics(id){return analytics[String(id)]||{views:0,whatsapp:0,calls:0,shares:0}}
 function toggleFavorite(id){
   id=Number(id);
   if(isFavorite(id))favorites.delete(id);else favorites.add(id);
@@ -49,11 +56,13 @@ function renderAds(list){
   $('#status').textContent=list.length?`وجدنا ${list.length} إعلان`:'لا توجد إعلانات مطابقة حاليًا';
   $('#results').innerHTML=list.length?list.map(a=>{
     const imgs=adImages(a),img=imgs[0]?.image_url,fav=isFavorite(a.id);
-    return `<article class="card" data-open-ad="${a.id}"><div class="card-media">${img?`<img src="${esc(img)}" alt="${esc(a.title)}" loading="lazy">`:'<div class="placeholder">📦</div>'}${imgs.length>1?`<span class="image-count">📷 ${imgs.length}</span>`:''}<button type="button" class="favorite-btn ${fav?'active':''}" data-favorite-ad="${a.id}" aria-label="حفظ الإعلان">${fav?'♥':'♡'}</button></div><div class="card-body"><div class="card-head"><h3>${esc(a.title)}</h3><button class="share-icon" data-share-ad="${a.id}" aria-label="مشاركة">↗</button></div><div class="price">${money(a.price)}</div><div class="meta">📍 ${esc(a.governorate)}${a.area?` · ${esc(a.area)}`:''}</div><p class="desc">${esc(a.description)}</p><div class="card-actions"><a class="call" href="tel:${esc(a.phone)}" onclick="event.stopPropagation()">اتصال</a><a class="whatsapp" target="_blank" rel="noopener" href="${waLink(a.phone)}" onclick="event.stopPropagation()">واتساب</a></div></div></article>`;
+    return `<article class="card" data-open-ad="${a.id}"><div class="card-media">${img?`<img src="${esc(img)}" alt="${esc(a.title)}" loading="lazy">`:'<div class="placeholder">📦</div>'}${imgs.length>1?`<span class="image-count">📷 ${imgs.length}</span>`:''}<button type="button" class="favorite-btn ${fav?'active':''}" data-favorite-ad="${a.id}" aria-label="حفظ الإعلان">${fav?'♥':'♡'}</button></div><div class="card-body"><div class="card-head"><h3>${esc(a.title)}</h3><button class="share-icon" data-share-ad="${a.id}" aria-label="مشاركة">↗</button></div><div class="price">${money(a.price)}</div><div class="meta">📍 ${esc(a.governorate)}${a.area?` · ${esc(a.area)}`:''}</div><p class="desc">${esc(a.description)}</p><div class="card-actions"><a class="call" href="tel:${esc(a.phone)}" data-track-call="${a.id}" onclick="event.stopPropagation()">اتصال</a><a class="whatsapp" target="_blank" rel="noopener" href="${waLink(a.phone)}" data-track-wa="${a.id}" onclick="event.stopPropagation()">واتساب</a></div></div></article>`;
   }).join(''):'<div class="empty">ما في نتائج حاليًا. جرّب طلبًا أوسع.</div>';
   document.querySelectorAll('[data-open-ad]').forEach(c=>c.onclick=e=>{if(e.target.closest('a,button'))return;openDetails(Number(c.dataset.openAd))});
   document.querySelectorAll('[data-share-ad]').forEach(b=>b.onclick=e=>{e.stopPropagation();shareAd(Number(b.dataset.shareAd))});
   document.querySelectorAll('[data-favorite-ad]').forEach(b=>b.onclick=e=>{e.stopPropagation();toggleFavorite(Number(b.dataset.favoriteAd))});
+  document.querySelectorAll('[data-track-call]').forEach(a=>a.onclick=()=>trackAdAction(a.dataset.trackCall,'calls'));
+  document.querySelectorAll('[data-track-wa]').forEach(a=>a.onclick=()=>trackAdAction(a.dataset.trackWa,'whatsapp'));
 }
 const governorates=['عمان','إربد','الزرقاء','البلقاء','المفرق','جرش','عجلون','مادبا','الكرك','الطفيلة','معان','العقبة'];
 const governorateAliases={
@@ -104,11 +113,13 @@ function understandQuery(raw){
   if(minPrice!==null&&maxPrice!==null&&minPrice>maxPrice)[minPrice,maxPrice]=[maxPrice,minPrice];
   const gov=Object.entries(governorateAliases).find(([,aliases])=>aliases.some(a=>q.includes(normalizeArabic(a))))?.[0]||null;
   const category=Object.entries(categoryAliases).find(([,words])=>words.some(w=>q.includes(normalizeArabic(w))))?.[0]||null;
-  const stop=['بدي','بدّي','اريد','أريد','دور','دورلي','ابحث','عن','اقل','اكثر','من','في','على','دينار','داخل','تحت','فوق','حدود','بحدود','ما','يتجاوز','بسعر','سعر','لحد','الى','بين','و'];
+  const yearMatch=q.match(/\b(19[8-9]\d|20[0-3]\d)\b/);
+  const year=yearMatch?Number(yearMatch[1]):null;
+  const stop=['موديل','سنة','سنه','بدي','بدّي','اريد','أريد','دور','دورلي','ابحث','عن','اقل','اكثر','من','في','على','دينار','داخل','تحت','فوق','حدود','بحدود','ما','يتجاوز','بسعر','سعر','لحد','الى','بين','و'];
   const stopN=stop.map(normalizeArabic);
   const govTokens=Object.values(governorateAliases).flat().map(normalizeArabic);
   const words=q.split(/\s+/).filter(w=>w.length>1&&!stopN.includes(w)&&!govTokens.includes(w)&&!/^(\d|الف|k)/i.test(w));
-  return {raw,q,minPrice,maxPrice,gov,category,words};
+  return {raw,q,minPrice,maxPrice,gov,category,year,words};
 }
 function scoreAd(a,intent){
   const hay=normalizeArabic(`${a.title} ${a.category} ${a.governorate} ${a.area} ${a.description}`);
@@ -118,12 +129,13 @@ function scoreAd(a,intent){
   const price=Number(a.price)||0;
   if(intent.maxPrice!==null&&price>0){if(price>intent.maxPrice)return -1;score+=12-Math.min(10,Math.round((intent.maxPrice-price)/Math.max(intent.maxPrice,1)*10))}
   if(intent.minPrice!==null&&price<intent.minPrice)return -1;
+  if(intent.year){if(hay.includes(String(intent.year)))score+=28;else return -1}
   for(const word of intent.words){const variants=expandWord(word);if(variants.some(v=>hay.includes(v)))score+=18;else if(word.length>=4&&variants.some(v=>hay.split(' ').some(t=>t.startsWith(v.slice(0,Math.max(3,v.length-1))))))score+=8;else score-=5}
   if(a.created_at)score+=Math.max(0,5-Math.floor((Date.now()-new Date(a.created_at))/86400000/7));
   return score;
 }
 function searchAds(raw){const intent=understandQuery(raw);return {intent,results:ads.map(a=>({a,score:scoreAd(a,intent)})).filter(x=>x.score>=0).sort((x,y)=>y.score-x.score).map(x=>x.a)}}
-function intentSummary(intent){const parts=[];if(intent.words.length)parts.push(intent.words.join(' '));if(intent.category&&!parts.includes(intent.category))parts.push(intent.category);if(intent.gov)parts.push(`في ${intent.gov}`);if(intent.minPrice!==null&&intent.maxPrice!==null)parts.push(`بين ${money(intent.minPrice)} و${money(intent.maxPrice)}`);else if(intent.maxPrice!==null)parts.push(`حتى ${money(intent.maxPrice)}`);else if(intent.minPrice!==null)parts.push(`من ${money(intent.minPrice)}`);return parts.join(' · ')||intent.raw}
+function intentSummary(intent){const parts=[];if(intent.words.length)parts.push(intent.words.join(' '));if(intent.category&&!parts.includes(intent.category))parts.push(intent.category);if(intent.gov)parts.push(`في ${intent.gov}`);if(intent.year)parts.push(`موديل ${intent.year}`);if(intent.minPrice!==null&&intent.maxPrice!==null)parts.push(`بين ${money(intent.minPrice)} و${money(intent.maxPrice)}`);else if(intent.maxPrice!==null)parts.push(`حتى ${money(intent.maxPrice)}`);else if(intent.minPrice!==null)parts.push(`من ${money(intent.minPrice)}`);return parts.join(' · ')||intent.raw}
 function suggestionButtons(intent){
   const items=[];
   if(intent.maxPrice!==null)items.push({label:'وسّع السعر 20%',q:intent.raw.replace(/\d+(?:[.,]\d+)?\s*(?:الف|k)?/i,String(Math.round(intent.maxPrice*1.2)))})
@@ -176,12 +188,31 @@ async function openSellerProfile(userId){
   document.querySelectorAll('[data-seller-ad]').forEach(b=>b.onclick=()=>{dialog.close();openDetails(Number(b.dataset.sellerAd))});
 }
 
-function openDetails(id){const a=ads.find(x=>Number(x.id)===Number(id));if(!a)return;currentDetail=a;currentImageIndex=0;renderDetail();history.replaceState(null,'',`#ad-${a.id}`);$('#detailsDialog').showModal()}
-function renderDetail(){const a=currentDetail,imgs=adImages(a);$('#detailTitle').textContent=a.title;$('#detailPrice').textContent=money(a.price);$('#detailMeta').textContent=`${a.category} · ${a.governorate} · ${a.area}`;$('#detailDescription').textContent=a.description;$('#detailCall').href=`tel:${a.phone}`;$('#detailWhatsapp').href=waLink(a.phone);$('#detailCounter').textContent=imgs.length?`${currentImageIndex+1} / ${imgs.length}`:'';$('#detailImage').src=imgs[currentImageIndex]?.image_url||'';$('#detailImage').hidden=!imgs.length;$('#detailPlaceholder').hidden=!!imgs.length;$('#prevImage').hidden=imgs.length<2;$('#nextImage').hidden=imgs.length<2;document.title=`${a.title} | Ask Jordan`;const related=ads.filter(x=>x.id!==a.id&&(x.category===a.category||x.governorate===a.governorate)).slice(0,4);$('#relatedAds').innerHTML=related.length?related.map(x=>`<button type="button" data-related="${x.id}"><strong>${esc(x.title)}</strong><span>${money(x.price)} · ${esc(x.governorate)}</span></button>`).join(''):'<p>لا توجد إعلانات مشابهة حاليًا.</p>';document.querySelectorAll('[data-related]').forEach(b=>b.onclick=()=>openDetails(Number(b.dataset.related)));updateDetailFavorite()}
+function openDetails(id){const a=ads.find(x=>Number(x.id)===Number(id));if(!a)return;currentDetail=a;currentImageIndex=0;trackAdAction(a.id,'views');renderDetail();history.replaceState(null,'',`#ad-${a.id}`);$('#detailsDialog').showModal()}
+function renderDetail(){const a=currentDetail,imgs=adImages(a);$('#detailTitle').textContent=a.title;$('#detailPrice').textContent=money(a.price);const stats=adAnalytics(a.id);$('#detailMeta').textContent=`${a.category} · ${a.governorate} · ${a.area} · 👁 ${stats.views}`;$('#detailDescription').textContent=a.description;$('#detailCall').href=`tel:${a.phone}`;$('#detailWhatsapp').href=waLink(a.phone);$('#detailCounter').textContent=imgs.length?`${currentImageIndex+1} / ${imgs.length}`:'';$('#detailImage').src=imgs[currentImageIndex]?.image_url||'';$('#detailImage').hidden=!imgs.length;$('#detailPlaceholder').hidden=!!imgs.length;$('#prevImage').hidden=imgs.length<2;$('#nextImage').hidden=imgs.length<2;document.title=`${a.title} | Ask Jordan`;const related=ads.filter(x=>x.id!==a.id&&(x.category===a.category||x.governorate===a.governorate)).slice(0,4);$('#relatedAds').innerHTML=related.length?related.map(x=>`<button type="button" data-related="${x.id}"><strong>${esc(x.title)}</strong><span>${money(x.price)} · ${esc(x.governorate)}</span></button>`).join(''):'<p>لا توجد إعلانات مشابهة حاليًا.</p>';document.querySelectorAll('[data-related]').forEach(b=>b.onclick=()=>openDetails(Number(b.dataset.related)));updateDetailFavorite()}
 $('#prevImage').onclick=()=>{const n=adImages(currentDetail).length;if(!n)return;currentImageIndex=(currentImageIndex-1+n)%n;renderDetail()};
 $('#nextImage').onclick=()=>{const n=adImages(currentDetail).length;if(!n)return;currentImageIndex=(currentImageIndex+1)%n;renderDetail()};
-$('#detailShare').onclick=()=>shareAd(currentDetail.id);$('#detailFavorite').onclick=()=>toggleFavorite(currentDetail.id);$('#detailSeller').onclick=()=>openSellerProfile(currentDetail.user_id);$('#detailsDialog').addEventListener('close',()=>{if(location.hash.startsWith('#ad-'))history.replaceState(null,'',location.pathname+location.search);document.title='Ask Jordan | اسأل السوق الأردني'});
-async function shareAd(id){const a=ads.find(x=>Number(x.id)===Number(id));if(!a)return;const text=`${a.title}\n${money(a.price)}\n${a.governorate} - ${a.area}\n${location.origin}`;try{if(navigator.share)await navigator.share({title:a.title,text,url:location.origin});else{await navigator.clipboard.writeText(text);alert('تم نسخ تفاصيل الإعلان')}}catch(e){if(e.name!=='AbortError')alert('تعذر المشاركة')}}
-$('#accountBtn').onclick=async()=>{if(!await requireAuth())return;const [{data:p},{data:mine,error}]=await Promise.all([sb.from('profiles').select('*').eq('id',session.user.id).single(),sb.from('ads').select('*').eq('user_id',session.user.id).order('created_at',{ascending:false})]);if(error){alert(error.message);return}$('#identity').textContent=`${p?.name||'مستخدم'} · ${p?.phone||''}`;const favAds=ads.filter(a=>isFavorite(a.id));$('#favoriteSummary').textContent=favAds.length?`لديك ${favAds.length} إعلان محفوظ`:'لا توجد إعلانات محفوظة';$('#favoriteAds').innerHTML=favAds.length?favAds.map(a=>`<button type="button" class="favorite-account-item" data-favorite-open="${a.id}"><strong>${esc(a.title)}</strong><span>${money(a.price)} · ${esc(a.governorate)}</span></button>`).join(''):'<p class="hint">احفظ أي إعلان من زر القلب وسيظهر هنا.</p>';document.querySelectorAll('[data-favorite-open]').forEach(b=>b.onclick=()=>{$('#accountDialog').close();openDetails(Number(b.dataset.favoriteOpen))});$('#myAds').innerHTML=mine?.length?mine.map(a=>`<div class="my-ad"><div><strong>${esc(a.title)}</strong><br><small>${esc(a.status)} · ${money(a.price)}</small></div><div class="my-ad-actions">${a.status==='active'?`<button class="ghost" data-edit="${a.id}">تعديل</button><button class="danger" data-delete="${a.id}">حذف</button>`:''}</div></div>`).join(''):'لا توجد إعلانات';document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('حذف الإعلان؟'))return;const {error}=await sb.from('ads').update({status:'deleted'}).eq('id',b.dataset.delete).eq('user_id',session.user.id);if(error)alert(error.message);else{$('#accountDialog').close();await loadAds()}});document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const a=mine.find(x=>Number(x.id)===Number(b.dataset.edit));if(!a)return;editingAdId=a.id;const f=$('#adForm').elements;f.title.value=a.title;f.category.value=a.category;f.governorate.value=a.governorate;f.price.value=a.price;f.area.value=a.area;f.description.value=a.description;f.phone.value=a.phone;$('#adDialogTitle').textContent='تعديل الإعلان';$('#adSubmit').textContent='حفظ التعديل';$('#adImagesHint').hidden=false;$('#accountDialog').close();$('#adDialog').showModal()});$('#accountDialog').showModal()};
+$('#detailCall').onclick=()=>trackAdAction(currentDetail.id,'calls');$('#detailWhatsapp').onclick=()=>trackAdAction(currentDetail.id,'whatsapp');$('#detailShare').onclick=()=>shareAd(currentDetail.id);$('#detailFavorite').onclick=()=>toggleFavorite(currentDetail.id);$('#detailSeller').onclick=()=>openSellerProfile(currentDetail.user_id);$('#detailsDialog').addEventListener('close',()=>{if(location.hash.startsWith('#ad-'))history.replaceState(null,'',location.pathname+location.search);document.title='Ask Jordan | اسأل السوق الأردني'});
+async function shareAd(id){trackAdAction(id,'shares');const a=ads.find(x=>Number(x.id)===Number(id));if(!a)return;const text=`${a.title}\n${money(a.price)}\n${a.governorate} - ${a.area}\n${location.origin}`;try{if(navigator.share)await navigator.share({title:a.title,text,url:location.origin});else{await navigator.clipboard.writeText(text);alert('تم نسخ تفاصيل الإعلان')}}catch(e){if(e.name!=='AbortError')alert('تعذر المشاركة')}}
+$('#accountBtn').onclick=async()=>{
+  if(!await requireAuth())return;
+  const [{data:p},{data:mine,error}]=await Promise.all([
+    sb.from('profiles').select('*').eq('id',session.user.id).single(),
+    sb.from('ads').select('*').eq('user_id',session.user.id).order('created_at',{ascending:false})
+  ]);
+  if(error){alert(error.message);return}
+  $('#identity').textContent=`${p?.name||'مستخدم'} · ${p?.phone||''}`;
+  const own=mine||[],activeCount=own.filter(a=>a.status==='active').length;
+  const totals=own.reduce((sum,a)=>{const x=adAnalytics(a.id);sum.views+=x.views;sum.whatsapp+=x.whatsapp;sum.calls+=x.calls;sum.shares+=x.shares;return sum},{views:0,whatsapp:0,calls:0,shares:0});
+  $('#sellerDashboard').innerHTML=`<div><strong>${activeCount}</strong><span>إعلانات نشطة</span></div><div><strong>${totals.views}</strong><span>مشاهدات</span></div><div><strong>${totals.whatsapp}</strong><span>نقرات واتساب</span></div><div><strong>${totals.calls}</strong><span>نقرات اتصال</span></div>`;
+  const favAds=ads.filter(a=>isFavorite(a.id));
+  $('#favoriteSummary').textContent=favAds.length?`لديك ${favAds.length} إعلان محفوظ`:'لا توجد إعلانات محفوظة';
+  $('#favoriteAds').innerHTML=favAds.length?favAds.map(a=>`<button type="button" class="favorite-account-item" data-favorite-open="${a.id}"><strong>${esc(a.title)}</strong><span>${money(a.price)} · ${esc(a.governorate)}</span></button>`).join(''):'<p class="hint">احفظ أي إعلان من زر القلب وسيظهر هنا.</p>';
+  document.querySelectorAll('[data-favorite-open]').forEach(b=>b.onclick=()=>{$('#accountDialog').close();openDetails(Number(b.dataset.favoriteOpen))});
+  $('#myAds').innerHTML=own.length?own.map(a=>{const x=adAnalytics(a.id);return `<div class="my-ad"><div><strong>${esc(a.title)}</strong><br><small>${esc(a.status)} · ${money(a.price)} · 👁 ${x.views} · واتساب ${x.whatsapp}</small></div><div class="my-ad-actions">${a.status==='active'?`<button class="ghost" data-edit="${a.id}">تعديل</button><button class="danger" data-delete="${a.id}">حذف</button>`:''}</div></div>`}).join(''):'لا توجد إعلانات';
+  document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('حذف الإعلان؟'))return;const {error}=await sb.from('ads').update({status:'deleted'}).eq('id',b.dataset.delete).eq('user_id',session.user.id);if(error)alert(error.message);else{$('#accountDialog').close();await loadAds()}});
+  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const a=own.find(x=>Number(x.id)===Number(b.dataset.edit));if(!a)return;editingAdId=a.id;const f=$('#adForm').elements;f.title.value=a.title;f.category.value=a.category;f.governorate.value=a.governorate;f.price.value=a.price;f.area.value=a.area;f.description.value=a.description;f.phone.value=a.phone;$('#adDialogTitle').textContent='تعديل الإعلان';$('#adSubmit').textContent='حفظ التعديل';$('#adImagesHint').hidden=false;$('#accountDialog').close();$('#adDialog').showModal()});
+  $('#accountDialog').showModal()
+};
 $('#logoutBtn').onclick=async()=>{await sb.auth.signOut();session=null;closeDialogs();alert('تم تسجيل الخروج')};
 (async()=>{await refreshSession();await loadAds();const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();
