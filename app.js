@@ -9,6 +9,46 @@ const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const money=v=>Number(v)?`${Number(v).toLocaleString('ar-JO')} د.أ`:'السعر عند التواصل';
 const waLink=p=>`https://wa.me/962${String(p||'').replace(/\D/g,'').replace(/^0/,'')}`;
 const normalizeImage=x=>x?{...x,image_url:x.image_url||x.url||''}:x;
+const AD_DRAFT_KEY='askJordanAdDraftV160';
+function detectCategoryFromText(text){
+  const q=normalizeArabic(text);
+  return Object.entries(categoryAliases).find(([,words])=>words.some(w=>q.includes(normalizeArabic(w))))?.[0]||'متفرقات';
+}
+function detectGovernorateFromText(text){
+  const q=normalizeArabic(text);
+  return Object.entries(governorateAliases).find(([,aliases])=>aliases.some(a=>q.includes(normalizeArabic(a))))?.[0]||'';
+}
+function detectPriceFromText(text){
+  const q=normalizeArabic(text);
+  const m=q.match(/(?:ب|بسعر|سعره|السعر|مطلوب)\s*([\d.,]+\s*(?:الف|k)?)/i)||q.match(/([\d.,]+\s*(?:الف|k)?)\s*(?:دينار|د\.?ا)/i);
+  return m?parseCompactNumber(m[1]):null;
+}
+function buildSmartAd(text){
+  const clean=String(text||'').trim();
+  const category=detectCategoryFromText(clean),governorate=detectGovernorateFromText(clean),price=detectPriceFromText(clean);
+  let title=clean.replace(/^(بدي|بدّي|اريد|أريد)\s+(ابيع|أبيع|بيع)\s*/i,'').split(/[،,.\n]/)[0].trim();
+  title=title.replace(/(?:ب|بسعر|سعره|السعر|مطلوب)\s*[\d.,]+\s*(?:الف|k)?\s*(?:دينار|د\.?ا)?/ig,'').replace(/\s+(في|من)\s+(عمان|عمّان|اربد|إربد|الزرقاء|زرقاء|البلقاء|السلط|المفرق|جرش|عجلون|مادبا|الكرك|الطفيلة|معان|العقبة).*$/i,'').trim();
+  if(title.length>100)title=title.slice(0,100).trim();
+  if(!title)title=category==='متفرقات'?'منتج للبيع':category.replace(/ات$/,'');
+  const areaMatch=clean.match(/(?:في|من)\s+(?:عمان|عمّان|اربد|إربد|الزرقاء|زرقاء|البلقاء|السلط|المفرق|جرش|عجلون|مادبا|الكرك|الطفيلة|معان|العقبة)\s+([^،,.\n]{2,30})/i);
+  const area=areaMatch?.[1]?.replace(/^(منطقه|منطقة|حي)\s*/i,'').trim()||'';
+  const description=clean.length<35?`${title} بحالة جيدة. للتواصل والاستفسار عبر الهاتف أو واتساب.`:clean;
+  return {title,category,price:price||'',governorate,area,description};
+}
+function saveAdDraft(){
+  const form=$('#adForm');if(!form)return;
+  const e=form.elements;
+  const draft={prompt:$('#sellerPrompt')?.value||'',title:e.title?.value||'',category:e.category?.value||'',price:e.price?.value||'',governorate:e.governorate?.value||'',area:e.area?.value||'',description:e.description?.value||'',phone:e.phone?.value||''};
+  localStorage.setItem(AD_DRAFT_KEY,JSON.stringify(draft));
+}
+function restoreAdDraft(){
+  try{const d=JSON.parse(localStorage.getItem(AD_DRAFT_KEY)||'null');if(!d)return false;const e=$('#adForm').elements;$('#sellerPrompt').value=d.prompt||'';for(const k of ['title','category','price','governorate','area','description','phone'])if(e[k]&&d[k]!==undefined)e[k].value=d[k];return true}catch{return false}
+}
+function clearAdDraft(){localStorage.removeItem(AD_DRAFT_KEY);$('#sellerPrompt').value='';$('#imagePreview').innerHTML='';}
+function renderImagePreview(files){
+  const box=$('#imagePreview');if(!box)return;box.innerHTML='';
+  [...files].slice(0,5).forEach(file=>{const url=URL.createObjectURL(file),item=document.createElement('div');item.className='image-preview-item';item.innerHTML=`<img src="${url}" alt="معاينة"><span>${esc(file.name)}</span>`;box.appendChild(item)});
+}
 const saveFavorites=()=>localStorage.setItem('askJordanFavorites',JSON.stringify([...favorites]));
 const isFavorite=id=>favorites.has(Number(id));
 const saveAnalytics=()=>localStorage.setItem('askJordanAnalytics',JSON.stringify(analytics));
@@ -151,7 +191,11 @@ function runSmartSearch(raw){
 }
 $('#searchForm').onsubmit=e=>{e.preventDefault();const raw=$('#searchInput').value.trim();if(!raw)return;const bubble=document.createElement('div');bubble.className='user-bubble';bubble.textContent=raw;$('#conversation').insertBefore(bubble,$('#assistantReply'));$('#searchInput').value='';runSmartSearch(raw)};
 document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.prompt;$('#searchForm').requestSubmit()});
-function resetAdForm(){editingAdId=null;$('#adDialogTitle').textContent='إضافة إعلان';$('#adSubmit').textContent='نشر الإعلان';$('#adImagesHint').hidden=true;$('#publishStatus').hidden=true;$('#adForm').reset()}
+function resetAdForm(){editingAdId=null;$('#adDialogTitle').textContent='إضافة إعلان';$('#adSubmit').textContent='نشر الإعلان';$('#adImagesHint').hidden=true;$('#publishStatus').hidden=true;$('#adForm').reset();$('#imagePreview').innerHTML='';$('#sellerAssistantStatus').textContent='';restoreAdDraft()}
+$('#generateAdBtn').onclick=()=>{const text=$('#sellerPrompt').value.trim(),status=$('#sellerAssistantStatus');if(!text){status.textContent='اكتب وصفًا سريعًا للإعلان أولًا.';return}const r=buildSmartAd(text),e=$('#adForm').elements;e.title.value=r.title;e.category.value=r.category;if(r.price)e.price.value=r.price;if(r.governorate)e.governorate.value=r.governorate;if(r.area)e.area.value=r.area;e.description.value=r.description;status.textContent='تمت تعبئة الإعلان. راجع البيانات ثم انشر.';saveAdDraft()};
+$('#clearDraftBtn').onclick=()=>{clearAdDraft();$('#adForm').reset();$('#sellerAssistantStatus').textContent='تم مسح المسودة.'};
+$('#adImagesInput').addEventListener('change',e=>renderImagePreview(e.target.files));
+$('#adForm').addEventListener('input',()=>{clearTimeout(window.__draftTimer);window.__draftTimer=setTimeout(saveAdDraft,350)});
 $('#addBtn').onclick=async()=>{if(!await requireAuth())return;resetAdForm();const {data:p}=await sb.from('profiles').select('phone').eq('id',session.user.id).single();$('#adForm').elements.phone.value=p?.phone||'';$('#adDialog').showModal()};
 async function insertImageRow(row){let r=await sb.from('ad_images').insert({...row,image_url:row.image_url});if(!r.error)return r; if(/image_url/i.test(r.error.message||'')){const {image_url,...rest}=row;return await sb.from('ad_images').insert({...rest,url:image_url})}return r}
 async function uploadImages(adId,files){let uploaded=0;for(let i=0;i<files.length;i++){const f=files[i];if(f.size>5*1024*1024)throw new Error(`الصورة ${f.name} أكبر من 5MB`);const ext=(f.name.split('.').pop()||'jpg').toLowerCase(),path=`${session.user.id}/${adId}/${crypto.randomUUID()}.${ext}`;const up=await sb.storage.from('ad-images').upload(path,f,{cacheControl:'3600',upsert:false});if(up.error)throw up.error;const {data:urlData}=sb.storage.from('ad-images').getPublicUrl(path);const imageRow={ad_id:adId,image_url:urlData.publicUrl,sort_order:i};const saved=await insertImageRow(imageRow);if(saved.error)throw saved.error;uploaded++}return uploaded}
@@ -169,7 +213,7 @@ $('#adForm').onsubmit=async e=>{
     const files=[...form.elements.images.files].slice(0,5);if(files.length){showStatus('تم حفظ الإعلان، جاري رفع الصور...');await uploadImages(ad.id,files)}
     await verifyAd(ad.id);showStatus('تم نشر الإعلان وظهر في السوق.','success');await loadAds();
     const published=ads.find(x=>Number(x.id)===Number(ad.id));if(!published)throw new Error('تم حفظ الإعلان لكن لم يظهر في النتائج بعد. حدّث الصفحة.');
-    setTimeout(()=>{form.reset();$('#adDialog').close();editingAdId=null;status.hidden=true;openDetails(ad.id)},500);
+    setTimeout(()=>{form.reset();clearAdDraft();$('#adDialog').close();editingAdId=null;status.hidden=true;openDetails(ad.id)},500);
   }catch(error){console.error('Publish error:',error);showStatus(error?.message||'تعذر نشر الإعلان.','error')}
   finally{isPublishing=false;btn.disabled=false;btn.textContent=editingAdId?'حفظ التعديل':'نشر الإعلان'}
 };
