@@ -1,7 +1,7 @@
 const cfg=window.ASK_JORDAN_CONFIG;
 const sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
 const $=s=>document.querySelector(s);
-let session=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false;
+let session=null,currentProfile=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false;
 let favorites=new Set(JSON.parse(localStorage.getItem('askJordanFavorites')||'[]').map(Number));
 let analytics=JSON.parse(localStorage.getItem('askJordanAnalytics')||'{}');
 const phoneToEmail=p=>`${String(p).replace(/\D/g,'')}@users.askjordan.com`;
@@ -73,8 +73,11 @@ function updateDetailFavorite(){
 }
 function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(d=>d.close())}
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>document.getElementById(b.dataset.close).close());
-async function refreshSession(){const {data}=await sb.auth.getSession();session=data.session;return session}
+async function refreshSession(){const {data}=await sb.auth.getSession();session=data.session;if(!session){currentProfile=null;updateAdminButton();return null}const {data:profile}=await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle();currentProfile=profile||null;updateAdminButton();return session}
+function isAdmin(){return currentProfile?.role==='admin'}
+function updateAdminButton(){const btn=$('#adminBtn');if(btn)btn.hidden=!isAdmin()}
 async function requireAuth(){await refreshSession();if(!session){setAuthMode('login');$('#authDialog').showModal();return false}return true}
+async function requireAdmin(){await refreshSession();if(!session){setAuthMode('login');$('#authDialog').showModal();return false}if(!isAdmin()){alert('هذه الصفحة مخصصة للمشرف فقط.');return false}return true}
 function setAuthMode(m){authMode=m;const s=m==='signup';$('#authTitle').textContent=s?'إنشاء حساب':'تسجيل الدخول';$('#authSubmit').textContent=s?'إنشاء الحساب':'دخول';$('#toggleAuth').textContent=s?'لدي حساب':'إنشاء حساب جديد';$('#nameField').hidden=!s}
 $('#toggleAuth').onclick=()=>setAuthMode(authMode==='login'?'signup':'login');
 $('#authForm').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget),phone=String(d.get('phone')).replace(/\D/g,''),password=String(d.get('password')),email=phoneToEmail(phone);let r;if(authMode==='signup'){r=await sb.auth.signUp({email,password,options:{data:{phone,name:String(d.get('name')||'')}}})}else{r=await sb.auth.signInWithPassword({email,password})}if(r.error){alert(r.error.message);return}await refreshSession();closeDialogs();e.currentTarget.reset();alert(authMode==='signup'?'تم إنشاء الحساب':'تم تسجيل الدخول')};
@@ -258,5 +261,44 @@ $('#accountBtn').onclick=async()=>{
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const a=own.find(x=>Number(x.id)===Number(b.dataset.edit));if(!a)return;editingAdId=a.id;const f=$('#adForm').elements;f.title.value=a.title;f.category.value=a.category;f.governorate.value=a.governorate;f.price.value=a.price;f.area.value=a.area;f.description.value=a.description;f.phone.value=a.phone;$('#adDialogTitle').textContent='تعديل الإعلان';$('#adSubmit').textContent='حفظ التعديل';$('#adImagesHint').hidden=false;$('#accountDialog').close();$('#adDialog').showModal()});
   $('#accountDialog').showModal()
 };
-$('#logoutBtn').onclick=async()=>{await sb.auth.signOut();session=null;closeDialogs();alert('تم تسجيل الخروج')};
+
+async function reportCurrentAd(){
+  if(!currentDetail)return;
+  if(!await requireAuth())return;
+  const reason=prompt('اكتب سبب البلاغ باختصار:','محتوى غير مناسب');
+  if(!reason?.trim())return;
+  const {error}=await sb.from('reports').insert({ad_id:currentDetail.id,reporter_id:session.user.id,reason:reason.trim(),status:'open'});
+  if(error){alert(error.message);return}
+  alert('تم إرسال البلاغ للمراجعة. شكرًا لك.');
+}
+function adminStat(label,value){return `<div><strong>${Number(value||0).toLocaleString('ar-JO')}</strong><span>${esc(label)}</span></div>`}
+function statusLabel(status){return ({active:'نشط',sold:'مباع',deleted:'محذوف'}[status]||status)}
+function reportStatusLabel(status){return ({open:'مفتوح',reviewed:'تمت المراجعة',dismissed:'مرفوض'}[status]||status)}
+async function openAdminPanel(){
+  if(!await requireAdmin())return;
+  const dialog=$('#adminDialog');dialog.showModal();
+  $('#adminStats').innerHTML='<p>جاري تحميل الإحصاءات...</p>';
+  $('#adminAds').innerHTML='';$('#adminReports').innerHTML='';$('#adminUsers').innerHTML='';
+  const [{data:allAds,error:adsError},{data:profiles,error:profilesError},{data:reports,error:reportsError}]=await Promise.all([
+    sb.from('ads').select('*').order('created_at',{ascending:false}).limit(500),
+    sb.from('profiles').select('id,name,phone,role,created_at').order('created_at',{ascending:false}).limit(500),
+    sb.from('reports').select('id,ad_id,reporter_id,reason,status,created_at').order('created_at',{ascending:false}).limit(500)
+  ]);
+  const error=adsError||profilesError||reportsError;if(error){$('#adminStats').innerHTML=`<p class="admin-error">${esc(error.message)}</p>`;return}
+  const active=(allAds||[]).filter(a=>a.status==='active').length,deleted=(allAds||[]).filter(a=>a.status==='deleted').length,openReports=(reports||[]).filter(r=>r.status==='open').length;
+  $('#adminStats').innerHTML=adminStat('إعلانات نشطة',active)+adminStat('إعلانات محذوفة',deleted)+adminStat('المستخدمون',(profiles||[]).length)+adminStat('بلاغات مفتوحة',openReports);
+  $('#adminAds').innerHTML=(allAds||[]).length?(allAds||[]).map(a=>`<div class="admin-row"><div><strong>${esc(a.title)}</strong><small>${esc(a.governorate)} · ${money(a.price)} · ${statusLabel(a.status)}</small></div><div class="admin-row-actions"><button type="button" data-admin-open="${a.id}" class="ghost">فتح</button>${a.status!=='active'?`<button type="button" data-admin-status="${a.id}" data-status="active" class="ghost">إعادة نشر</button>`:''}${a.status==='active'?`<button type="button" data-admin-status="${a.id}" data-status="deleted" class="danger">إخفاء</button><button type="button" data-admin-status="${a.id}" data-status="sold" class="ghost">مباع</button>`:''}</div></div>`).join(''):'<p>لا توجد إعلانات.</p>';
+  $('#adminReports').innerHTML=(reports||[]).length?(reports||[]).map(r=>{const ad=(allAds||[]).find(a=>Number(a.id)===Number(r.ad_id));return `<div class="admin-row"><div><strong>${esc(ad?.title||`إعلان #${r.ad_id}`)}</strong><small>${esc(r.reason)} · ${reportStatusLabel(r.status)}</small></div><div class="admin-row-actions"><button type="button" data-admin-open="${r.ad_id}" class="ghost">فتح الإعلان</button>${r.status==='open'?`<button type="button" data-report-status="${r.id}" data-status="reviewed" class="primary">تمت المراجعة</button><button type="button" data-report-status="${r.id}" data-status="dismissed" class="ghost">رفض البلاغ</button>`:''}</div></div>`}).join(''):'<p>لا توجد بلاغات.</p>';
+  $('#adminUsers').innerHTML=(profiles||[]).length?(profiles||[]).map(p=>`<div class="admin-row"><div><strong>${esc(p.name||'مستخدم')}</strong><small>${esc(p.phone||'بدون رقم')} · ${p.role==='admin'?'مشرف':'مستخدم'} · ${p.created_at?new Date(p.created_at).toLocaleDateString('ar-JO'):''}</small></div>${p.role==='admin'?'<span class="admin-badge">مشرف</span>':''}</div>`).join(''):'<p>لا يوجد مستخدمون.</p>';
+  bindAdminActions();
+}
+function bindAdminActions(){
+  document.querySelectorAll('[data-admin-open]').forEach(b=>b.onclick=()=>{const id=Number(b.dataset.adminOpen),a=ads.find(x=>Number(x.id)===id);if(a){$('#adminDialog').close();openDetails(id)}else alert('هذا الإعلان غير ظاهر للعامة حاليًا. استخدم إدارة الحالة من اللوحة.')});
+  document.querySelectorAll('[data-admin-status]').forEach(b=>b.onclick=async()=>{const id=Number(b.dataset.adminStatus),status=b.dataset.status;if(!confirm(`تغيير حالة الإعلان إلى ${statusLabel(status)}؟`))return;const {error}=await sb.from('ads').update({status,updated_at:new Date().toISOString()}).eq('id',id);if(error)alert(error.message);else{await loadAds();await openAdminPanel()}});
+  document.querySelectorAll('[data-report-status]').forEach(b=>b.onclick=async()=>{const {error}=await sb.from('reports').update({status:b.dataset.status,reviewed_at:new Date().toISOString(),reviewed_by:session.user.id}).eq('id',Number(b.dataset.reportStatus));if(error)alert(error.message);else await openAdminPanel()});
+}
+$('#adminBtn').onclick=openAdminPanel;
+$('#detailReport').onclick=reportCurrentAd;
+
+$('#logoutBtn').onclick=async()=>{await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();closeDialogs();alert('تم تسجيل الخروج')};
 (async()=>{await refreshSession();await loadAds();const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();
