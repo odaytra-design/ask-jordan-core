@@ -14,6 +14,28 @@ const normalizeImage=x=>x?{...x,image_url:x.image_url||x.url||''}:x;
 const AD_DRAFT_KEY='askJordanAdDraftV160';
 const PAYMENT_PHONE='0776275911';
 const PROMOTION_PLANS={day:{label:'يوم واحد',amount:1,days:1},week:{label:'أسبوع',amount:5,days:7},month:{label:'شهر',amount:15,days:30}};
+
+const AI_ENDPOINT='/api/ai';
+async function askJordanAI(mode,payload){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),15000);
+  try{
+    const response=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,...payload}),signal:controller.signal});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||'تعذر الاتصال بالمساعد الذكي');
+    return data;
+  }finally{clearTimeout(timeout)}
+}
+function normalizeAIIntent(value,raw){
+  const base=understandQuery(raw),x=value&&typeof value==='object'?value:{};
+  const category=Object.keys(categoryAliases).find(k=>normalizeArabic(k)===normalizeArabic(x.category||''))||base.category||null;
+  const gov=governorates.find(g=>normalizeArabic(g)===normalizeArabic(x.governorate||x.gov||''))||base.gov||null;
+  const transmission=x.transmission&&/اوتومات|أوتومات|عادي|يدوي/i.test(x.transmission)?(/عادي|يدوي/i.test(x.transmission)?'عادي':'أوتوماتيك'):base.transmission;
+  const words=Array.isArray(x.keywords)?x.keywords.map(normalizeArabic).filter(Boolean).slice(0,8):base.words;
+  const num=v=>Number.isFinite(Number(v))?Number(v):null;
+  return {...base,category,gov,transmission,year:num(x.year)||base.year,minPrice:num(x.min_price)??base.minPrice,maxPrice:num(x.max_price)??base.maxPrice,words};
+}
+
 function detectCategoryFromText(text){
   const q=normalizeArabic(text);
   return Object.entries(categoryAliases).find(([,words])=>words.some(w=>q.includes(normalizeArabic(w))))?.[0]||'متفرقات';
@@ -225,8 +247,12 @@ function suggestionButtons(intent){
 }
 async function runSmartSearch(raw){
   sb.rpc('increment_search_count').then(()=>loadPublicStats(false)).catch(()=>{});
-  const {intent,results}=searchAds(raw);const reply=$('#assistantReply');reply.hidden=false;
-  reply.innerHTML=results.length?`فهمت طلبك: <strong>${esc(intentSummary(intent))}</strong><br>رتبت لك <strong>${results.length}</strong> إعلانًا من الأكثر تطابقًا للأقل.`:`لم أجد تطابقًا دقيقًا لـ <strong>${esc(intentSummary(intent))}</strong>.<div class="suggestion-row">${suggestionButtons(intent)}</div>`;
+  const reply=$('#assistantReply');reply.hidden=false;reply.innerHTML='✨ جاري تحليل طلبك بالذكاء الاصطناعي...';
+  let intent=understandQuery(raw),aiUsed=false;
+  try{const ai=await askJordanAI('search',{query:raw});intent=normalizeAIIntent(ai.intent,raw);aiUsed=true}catch(err){console.warn('AI search fallback:',err.message)}
+  const results=ads.map(a=>({a,score:scoreAd(a,intent)})).filter(x=>x.score>=0).sort((x,y)=>y.score-x.score).map(x=>x.a);
+  const badge=aiUsed?' <span class="ai-live-badge">AI</span>':'';
+  reply.innerHTML=results.length?`فهمت طلبك${badge}: <strong>${esc(intentSummary(intent))}</strong><br>رتبت لك <strong>${results.length}</strong> إعلانًا من الأكثر تطابقًا للأقل.`:`لم أجد تطابقًا دقيقًا لـ <strong>${esc(intentSummary(intent))}</strong>${badge}.<div class="suggestion-row">${suggestionButtons(intent)}</div>`;
   renderAds(results);
   document.querySelectorAll('[data-search-suggestion]').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.searchSuggestion;$('#searchForm').requestSubmit()});
 }
@@ -322,7 +348,7 @@ function handleSellerWizardAnswer(raw){
   if(sellerFlow.step==='description'){d.description=value;finishSellerWizard()}
 }
 function resetAdForm(){editingAdId=null;$('#adDialogTitle').textContent='إضافة إعلان';$('#adSubmit').textContent='نشر الإعلان';$('#adImagesHint').hidden=true;$('#publishStatus').hidden=true;$('#adForm').reset();$('#imagePreview').innerHTML='';$('#sellerAssistantStatus').textContent='';restoreAdDraft();resetSellerWizard()}
-$('#generateAdBtn').onclick=()=>{const text=$('#sellerPrompt').value.trim(),status=$('#sellerAssistantStatus');if(!text){status.textContent='اكتب وصفًا سريعًا للإعلان أولًا.';return}const r=buildSmartAd(text),e=$('#adForm').elements;e.title.value=r.title;e.category.value=r.category;if(r.price)e.price.value=r.price;if(r.governorate)e.governorate.value=r.governorate;if(r.area)e.area.value=r.area;e.description.value=r.description;status.textContent='تمت تعبئة الإعلان. راجع البيانات ثم انشر.';saveAdDraft()};
+$('#generateAdBtn').onclick=async()=>{const text=$('#sellerPrompt').value.trim(),status=$('#sellerAssistantStatus'),btn=$('#generateAdBtn');if(!text){status.textContent='اكتب وصفًا سريعًا للإعلان أولًا.';return}btn.disabled=true;status.textContent='✨ جاري كتابة الإعلان بالذكاء الاصطناعي...';let r;try{const ai=await askJordanAI('seller',{text});r=ai.ad;status.textContent='تمت كتابة الإعلان بالذكاء الاصطناعي ✅ راجع البيانات ثم انشر.'}catch(err){r=buildSmartAd(text);status.textContent='تمت التعبئة الذكية محليًا لأن خدمة AI لم تستجب.'}finally{btn.disabled=false}const e=$('#adForm').elements;e.title.value=String(r.title||'').slice(0,100);e.category.value=Object.keys(categoryAliases).includes(r.category)?r.category:detectCategoryFromText(text);if(r.price!==undefined&&r.price!==null)e.price.value=Number(r.price)||'';if(r.governorate&&governorates.includes(r.governorate))e.governorate.value=r.governorate;if(r.area)e.area.value=r.area;e.description.value=r.description||text;saveAdDraft()};
 $('#clearDraftBtn').onclick=()=>{clearAdDraft();$('#adForm').reset();$('#sellerAssistantStatus').textContent='تم مسح المسودة.'};
 $('#sellerWizardSend').onclick=()=>handleSellerWizardAnswer($('#sellerWizardInput').value);
 $('#sellerWizardInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();handleSellerWizardAnswer(e.currentTarget.value)}};

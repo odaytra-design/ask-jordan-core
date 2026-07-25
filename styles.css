@@ -88,3 +88,4 @@ body{background:radial-gradient(circle at 50% -15%,#eaf2ff 0,transparent 35%),li
 .activity-enter{animation:activityIn .45s ease both}
 @keyframes activityIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .hero-composer:focus-within{border-color:#84a0f4;box-shadow:0 20px 58px rgba(53,99,233,.18)}
+.ai-live-badge{display:inline-flex;align-items:center;justify-content:center;margin-inline-start:.35rem;padding:.15rem .45rem;border-radius:999px;font-size:.72rem;font-weight:800;background:rgba(16,185,129,.14);color:#047857;border:1px solid rgba(16,185,129,.28)}
