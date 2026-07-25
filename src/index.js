@@ -93,6 +93,31 @@ assistantReply رد عربي أردني طبيعي وقصير للمستخدم �
       return json({ ok: true, mode, source: "openai", model: env.OPENAI_MODEL || "gpt-4o-mini", data });
     }
 
+    if (mode === "agent") {
+      const candidates = Array.isArray(body?.candidates) ? body.candidates.slice(0, 15).map((ad) => ({
+        id: ad?.id,
+        title: String(ad?.title || "").slice(0, 140),
+        category: String(ad?.category || "").slice(0, 60),
+        governorate: String(ad?.governorate || "").slice(0, 60),
+        area: String(ad?.area || "").slice(0, 80),
+        price: Number(ad?.price) || null,
+        description: String(ad?.description || "").slice(0, 350),
+      })) : [];
+      const intent = body?.intent && typeof body.intent === "object" ? body.intent : {};
+      const data = await callOpenAI(
+        env,
+        `أنت وكيل شراء ذكي لمنصة إعلانات أردنية اسمها Ask Jordan. ستستلم طلب المستخدم وفلاتر مفهومة وقائمة إعلانات حقيقية من المنصة. أعد JSON فقط دون Markdown بالشكل:
+{"assistantReply":"","rankedIds":[],"suggestedQuery":""}
+رتّب فقط IDs الموجودة في القائمة من الأنسب إلى الأقل مناسبة. لا تخترع إعلانات أو أسعارًا أو مواصفات. إذا كانت القائمة فارغة، اشرح بلطف أنه لا توجد نتيجة واقترح توسيعًا منطقيًا واحدًا في suggestedQuery. إذا وجدت نتائج، اذكر عددها وعرّف أفضل خيار أو خيارين اعتمادًا على البيانات المتاحة فقط، ووضّح سبب الاختيار بجملة قصيرة. استخدم لهجة عربية أردنية طبيعية ومختصرة. لا تقل إنك تواصلت مع البائع. rankedIds يجب أن يحتوي أرقام IDs فقط. suggestedQuery يكون فارغًا عند عدم الحاجة.`,
+        JSON.stringify({ userRequest: text, intent, candidates }),
+      );
+      const allowed = new Set(candidates.map((x) => String(x.id)));
+      data.rankedIds = Array.isArray(data.rankedIds) ? data.rankedIds.filter((id) => allowed.has(String(id))) : [];
+      data.assistantReply = String(data.assistantReply || "").slice(0, 1200);
+      data.suggestedQuery = String(data.suggestedQuery || "").slice(0, 300);
+      return json({ ok: true, mode, source: "openai", model: env.OPENAI_MODEL || "gpt-4o-mini", data });
+    }
+
     if (mode === "ad") {
       const data = await callOpenAI(
         env,
@@ -104,7 +129,7 @@ assistantReply رد عربي أردني طبيعي وقصير للمستخدم �
       return json({ ok: true, mode, source: "openai", model: env.OPENAI_MODEL || "gpt-4o-mini", data });
     }
 
-    return json({ ok: false, error: "mode يجب أن يكون search أو ad" }, 400);
+    return json({ ok: false, error: "mode يجب أن يكون search أو agent أو ad" }, 400);
   } catch (error) {
     console.error("Ask Jordan AI error", error);
     return json({ ok: false, error: error?.message || "تعذر الاتصال بالذكاء الاصطناعي" }, 502);

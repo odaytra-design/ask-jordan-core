@@ -216,14 +216,19 @@ function scoreAd(a,intent){
 }
 function searchAdsFromIntent(intent){return {intent,results:ads.map(a=>({a,score:scoreAd(a,intent)})).filter(x=>x.score>=0).sort((x,y)=>y.score-x.score).map(x=>x.a)}}
 function searchAds(raw){return searchAdsFromIntent(understandQuery(raw))}
-async function callAskJordanAI(mode,text){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+async function callAskJordanAI(mode,text,extra={}){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
   try{
-    const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,text}),signal:controller.signal});
+    const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,text,...extra}),signal:controller.signal});
     const payload=await r.json().catch(()=>({}));
     if(!r.ok||!payload.ok)throw new Error(payload.error||`AI HTTP ${r.status}`);
     return {...payload.data,__source:payload.source||'unknown',__model:payload.model||''};
   }finally{clearTimeout(timer)}
+}
+function compactAdForAgent(a){return {id:a.id,title:a.title,category:a.category,governorate:a.governorate,area:a.area,price:a.price,description:a.description}}
+function reorderByAgent(results,rankedIds=[]){
+  const order=new Map((rankedIds||[]).map((id,i)=>[String(id),i]));
+  return [...results].sort((a,b)=>(order.has(String(a.id))?order.get(String(a.id)):999)-(order.has(String(b.id))?order.get(String(b.id)):999));
 }
 function mergeAIIntent(raw,ai){
   const local=understandQuery(raw),words=Array.isArray(ai?.keywords)?ai.keywords.map(normalizeArabic).filter(Boolean):[];
@@ -245,10 +250,22 @@ async function runSmartSearch(raw,precomputedIntent=null,aiAlreadyUsed=false){
     try{const ai=await callAskJordanAI('search',raw);intent=mergeAIIntent(raw,ai);usedAI=true;console.info('Ask Jordan AI search active',ai)}
     catch(error){console.warn('AI fallback:',error.message);intent=understandQuery(raw)}
   }
-  const {results}=searchAdsFromIntent(intent);
+  let {results}=searchAdsFromIntent(intent);
   const badge=usedAI?' <span class="ai-live-badge">AI</span>':'';
   const aiIntro=usedAI&&intent.aiReply?`${esc(intent.aiReply)}${badge}`:`فهمت طلبك${badge}: <strong>${esc(intent.aiSummary||intentSummary(intent))}</strong>`;
-  reply.innerHTML=results.length?`${aiIntro}<br>وجدت ورتبت لك <strong>${results.length}</strong> إعلانًا من الأكثر تطابقًا للأقل.`:`${aiIntro}<br>لكن ما لقيت إعلانًا مطابقًا حاليًا.<div class="suggestion-row">${suggestionButtons(intent)}</div>`;
+  let agentReply='',agentSuggestion='';
+  if(usedAI){
+    try{
+      reply.innerHTML=`${aiIntro}<br>جاري مقارنة النتائج واختيار الأنسب إلك...`;
+      const agent=await callAskJordanAI('agent',raw,{intent:{category:intent.category,governorate:intent.gov,minPrice:intent.minPrice,maxPrice:intent.maxPrice,year:intent.year,transmission:intent.transmission,keywords:intent.words},candidates:results.slice(0,15).map(compactAdForAgent)});
+      results=reorderByAgent(results,agent.rankedIds);
+      agentReply=agent.assistantReply||'';
+      agentSuggestion=agent.suggestedQuery||'';
+      console.info('Ask Jordan AI agent active',agent);
+    }catch(error){console.warn('AI agent fallback:',error.message)}
+  }
+  const agentSuggestionHtml=agentSuggestion?`<div class="suggestion-row"><button type="button" class="suggestion-chip" data-search-suggestion="${esc(agentSuggestion)}">جرّب اقتراح الذكاء</button></div>`:'';
+  reply.innerHTML=agentReply?`${esc(agentReply)}${badge}${agentSuggestionHtml}`:(results.length?`${aiIntro}<br>وجدت ورتبت لك <strong>${results.length}</strong> إعلانًا من الأكثر تطابقًا للأقل.`:`${aiIntro}<br>لكن ما لقيت إعلانًا مطابقًا حاليًا.${agentSuggestionHtml||`<div class="suggestion-row">${suggestionButtons(intent)}</div>`}`);
   renderAds(results);
   document.querySelectorAll('[data-search-suggestion]').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.searchSuggestion;$('#searchForm').requestSubmit()});
 }
