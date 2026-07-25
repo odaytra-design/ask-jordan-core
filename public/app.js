@@ -1,7 +1,7 @@
 const cfg=window.ASK_JORDAN_CONFIG;
 const sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
 const $=s=>document.querySelector(s);
-let session=null,currentProfile=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false,currentConversationId=null,messageChannel=null;
+let session=null,currentProfile=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false,currentConversationId=null,messageChannel=null,notificationChannel=null;
 let favorites=new Set(JSON.parse(localStorage.getItem('askJordanFavorites')||'[]').map(Number));
 let analytics=JSON.parse(localStorage.getItem('askJordanAnalytics')||'{}');
 let buyerFlow={active:false,intent:null,step:null};
@@ -107,7 +107,7 @@ async function requireAuth(){await refreshSession();if(!session){setAuthMode('lo
 async function requireAdmin(){await refreshSession();if(!session){setAuthMode('login');$('#authDialog').showModal();return false}if(!isAdmin()){alert('هذه الصفحة مخصصة للمشرف فقط.');return false}return true}
 function setAuthMode(m){authMode=m;const s=m==='signup';$('#authTitle').textContent=s?'إنشاء حساب':'تسجيل الدخول';$('#authSubmit').textContent=s?'إنشاء الحساب':'دخول';$('#toggleAuth').textContent=s?'لدي حساب':'إنشاء حساب جديد';$('#nameField').hidden=!s}
 $('#toggleAuth').onclick=()=>setAuthMode(authMode==='login'?'signup':'login');
-$('#authForm').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget),phone=String(d.get('phone')).replace(/\D/g,''),password=String(d.get('password')),email=phoneToEmail(phone);let r;if(authMode==='signup'){r=await sb.auth.signUp({email,password,options:{data:{phone,name:String(d.get('name')||'')}}})}else{r=await sb.auth.signInWithPassword({email,password})}if(r.error){alert(r.error.message);return}await refreshSession();updateUnreadBadge();closeDialogs();e.currentTarget.reset();alert(authMode==='signup'?'تم إنشاء الحساب':'تم تسجيل الدخول')};
+$('#authForm').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget),phone=String(d.get('phone')).replace(/\D/g,''),password=String(d.get('password')),email=phoneToEmail(phone);let r;if(authMode==='signup'){r=await sb.auth.signUp({email,password,options:{data:{phone,name:String(d.get('name')||'')}}})}else{r=await sb.auth.signInWithPassword({email,password})}if(r.error){alert(r.error.message);return}await refreshSession();updateUnreadBadge();updateNotificationBadge();subscribeNotifications();closeDialogs();e.currentTarget.reset();alert(authMode==='signup'?'تم إنشاء الحساب':'تم تسجيل الدخول')};
 async function fetchImages(){const {data,error}=await sb.from('ad_images').select('*').order('sort_order',{ascending:true});if(error){console.warn('Images load:',error.message);return []}return (data||[]).map(normalizeImage)}
 let liveActivityOffset=0,liveActivityTimer=null;
 function renderLiveActivity(){
@@ -432,6 +432,40 @@ async function openSellerProfile(userId){
 
 
 function shortTime(value){if(!value)return '';const d=new Date(value),now=new Date(),same=d.toDateString()===now.toDateString();return same?d.toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('ar-JO',{month:'short',day:'numeric'})}
+async function updateNotificationBadge(){
+  const badge=$('#notificationBadge');if(!badge)return;
+  if(!session){badge.hidden=true;return}
+  const {count,error}=await sb.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',session.user.id).is('read_at',null);
+  if(error){console.warn('Unread notifications:',error.message);badge.hidden=true;return}
+  badge.textContent=Number(count||0)>99?'99+':String(count||0);badge.hidden=!count;
+}
+function notificationIcon(type){return type==='message'?'💬':type==='saved_search_match'?'🔎':'🔔'}
+async function renderNotifications(){
+  const box=$('#notificationsList');box.innerHTML='<p class="hint">جاري تحميل الإشعارات...</p>';
+  const {data,error}=await sb.from('notifications').select('*').eq('user_id',session.user.id).order('created_at',{ascending:false}).limit(100);
+  if(error){box.innerHTML=`<p class="hint">${esc(error.message)}</p>`;return}
+  const rows=data||[];
+  box.innerHTML=rows.length?rows.map(n=>`<button type="button" class="notification-item ${n.read_at?'':'unread'}" data-notification="${n.id}" data-type="${esc(n.type)}" data-ad="${n.ad_id||''}" data-conversation="${n.conversation_id||''}"><span class="notification-icon">${notificationIcon(n.type)}</span><span><strong>${esc(n.title)}</strong><small>${esc(n.body||'')} · ${shortTime(n.created_at)}</small></span>${n.read_at?'':'<i></i>'}</button>`).join(''):'<p class="hint">لا توجد إشعارات حاليًا.</p>';
+  box.querySelectorAll('[data-notification]').forEach(b=>b.onclick=async()=>{
+    await sb.from('notifications').update({read_at:new Date().toISOString()}).eq('id',b.dataset.notification).eq('user_id',session.user.id);
+    await updateNotificationBadge();
+    $('#notificationsDialog').close();
+    if(b.dataset.type==='message'&&b.dataset.conversation){$('#messagesDialog').showModal();await renderConversationList(Number(b.dataset.conversation));await openConversation(Number(b.dataset.conversation));return}
+    if(b.dataset.ad)openDetails(Number(b.dataset.ad));
+  });
+}
+async function subscribeNotifications(){
+  if(notificationChannel){await sb.removeChannel(notificationChannel);notificationChannel=null}
+  if(!session)return;
+  notificationChannel=sb.channel(`notifications-${session.user.id}`).on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${session.user.id}`},payload=>{
+    updateNotificationBadge();
+    const n=payload.new;
+    if(document.visibilityState==='visible'){
+      const toast=document.createElement('button');toast.type='button';toast.className='notification-toast';toast.innerHTML=`<span>${notificationIcon(n.type)}</span><div><strong>${esc(n.title)}</strong><small>${esc(n.body||'')}</small></div>`;
+      toast.onclick=()=>{$('#notificationsBtn').click();toast.remove()};document.body.appendChild(toast);setTimeout(()=>toast.remove(),6500);
+    }
+  }).subscribe();
+}
 async function updateUnreadBadge(){
   const badge=$('#messageBadge');if(!badge)return;
   if(!session){badge.hidden=true;return}
@@ -478,6 +512,8 @@ async function startConversation(ad){
   const {data,error}=await sb.rpc('get_or_create_conversation',{p_ad_id:Number(ad.id)});if(error){alert(error.message);return}
   $('#detailsDialog').close();$('#messagesDialog').showModal();await renderConversationList(Number(data));
 }
+$('#notificationsBtn').onclick=async()=>{if(!await requireAuth())return;$('#notificationsDialog').showModal();await renderNotifications()};
+$('#markAllNotifications').onclick=async()=>{if(!session)return;const {error}=await sb.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',session.user.id).is('read_at',null);if(error)alert(error.message);else{await updateNotificationBadge();await renderNotifications()}};
 $('#messagesBtn').onclick=async()=>{if(!await requireAuth())return;$('#messagesDialog').showModal();await renderConversationList()};
 $('#chatForm').onsubmit=async e=>{e.preventDefault();if(!currentConversationId)return;const input=$('#chatInput'),body=input.value.trim();if(!body)return;input.value='';const {error}=await sb.from('messages').insert({conversation_id:currentConversationId,sender_id:session.user.id,body});if(error){alert(error.message);input.value=body;return}await sb.from('conversations').update({last_message_at:new Date().toISOString()}).eq('id',currentConversationId);await openConversation(currentConversationId)};
 
@@ -567,5 +603,5 @@ $('#showAllAdsBtn').onclick=()=>document.getElementById('conversation').scrollIn
 $('#adminBtn').onclick=openAdminPanel;
 $('#detailReport').onclick=reportCurrentAd;
 
-$('#logoutBtn').onclick=async()=>{if(messageChannel)sb.removeChannel(messageChannel);await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();updateUnreadBadge();closeDialogs();alert('تم تسجيل الخروج')};
-(async()=>{await loadPublicStats(true);await refreshSession();await updateUnreadBadge();await loadAds();const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();
+$('#logoutBtn').onclick=async()=>{if(messageChannel)sb.removeChannel(messageChannel);if(notificationChannel)sb.removeChannel(notificationChannel);await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();updateUnreadBadge();updateNotificationBadge();closeDialogs();alert('تم تسجيل الخروج')};
+(async()=>{await loadPublicStats(true);await refreshSession();await updateUnreadBadge();await updateNotificationBadge();await subscribeNotifications();await loadAds();const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();
