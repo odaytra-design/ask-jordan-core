@@ -143,6 +143,21 @@ function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(d=>d.c
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>document.getElementById(b.dataset.close).close());
 async function refreshSession(){const {data}=await sb.auth.getSession();session=data.session;if(!session){currentProfile=null;updateAdminButton();return null}const {data:profile}=await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle();currentProfile=profile||null;updateAdminButton();return session}
 function isAdmin(){return currentProfile?.role==='admin'}
+
+const isAdminPath=()=>/^\/admin(?:\/login)?\/?$/.test(location.pathname);
+function setAdminLoginStatus(message='',error=false){const box=$('#adminLoginStatus');if(!box)return;box.hidden=!message;box.textContent=message;box.classList.toggle('error',error)}
+function openAdminLogin(message=''){
+  const d=$('#adminLoginDialog');setAdminLoginStatus(message,Boolean(message));if(d&&!d.open)d.showModal();
+}
+async function handleAdminRoute(){
+  if(!isAdminPath())return;
+  await refreshSession();
+  if(!session){openAdminLogin();return}
+  if(!isAdmin()){openAdminLogin('هذا الحساب لا يملك صلاحية مشرف.');return}
+  if(location.pathname!='/admin')history.replaceState(null,'','/admin');
+  await openAdminPanel(true);
+}
+
 function updateAdminButton(){const btn=$('#adminBtn');if(btn)btn.hidden=!isAdmin()}
 async function requireAuth(){await refreshSession();if(!session){setAuthMode('login');$('#authDialog').showModal();return false}return true}
 async function requireAdmin(){await refreshSession();if(!session){setAuthMode('login');$('#authDialog').showModal();return false}if(!isAdmin()){alert('هذه الصفحة مخصصة للمشرف فقط.');return false}return true}
@@ -702,8 +717,9 @@ function renderAdminGovernorates(allAds=[]){const counts={};for(const a of allAd
 function renderAdminActivity(allAds=[],profiles=[],reports=[],promotions=[]){const items=[];for(const a of allAds.slice(0,8))items.push({at:a.created_at,icon:'📢',title:'إعلان جديد',text:a.title||`إعلان #${a.id}`});for(const u of profiles.slice(0,6))items.push({at:u.created_at,icon:'👤',title:'مستخدم جديد',text:u.name||u.phone||'حساب جديد'});for(const r of reports.slice(0,6))items.push({at:r.created_at,icon:'🚨',title:'بلاغ جديد',text:r.reason||`إعلان #${r.ad_id}`});for(const x of promotions.slice(0,6))items.push({at:x.created_at,icon:'💎',title:'طلب ترويج',text:`طلب بقيمة ${money(x.amount||0)}`});items.sort((a,b)=>new Date(b.at||0)-new Date(a.at||0));$('#adminLiveActivity').innerHTML=items.slice(0,9).map(x=>`<div class="admin-live-item"><span>${x.icon}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p></div><time>${x.at?relativeTime(x.at):'—'}</time></div>`).join('')||'<p class="hint">لا توجد نشاطات حديثة.</p>'}
 async function renderAdminAIHealth(){const box=$('#adminAIHealth');const started=performance.now();try{const res=await fetch('/api/ai');const data=await res.json();const ms=Math.round(performance.now()-started);box.innerHTML=`<div class="ai-health-status ok"><i></i><strong>الخدمة تعمل</strong></div><dl><div><dt>النموذج</dt><dd>${esc(data.model||'حسب الإعدادات')}</dd></div><div><dt>زمن الاستجابة</dt><dd>${ms.toLocaleString('ar-JO')} ms</dd></div><div><dt>المفتاح</dt><dd>${data.keyConfigured?'مُعدّ':'غير مُعدّ'}</dd></div></dl>`}catch(e){box.innerHTML=`<div class="ai-health-status bad"><i></i><strong>تعذر الاتصال</strong></div><p class="hint">${esc(e.message)}</p>`}}
 function setAdminAlerts({openReports,pendingReview,pendingPromotions,aiConfigured}){const alerts=[];if(openReports)alerts.push(`${openReports} بلاغ مفتوح`);if(pendingReview)alerts.push(`${pendingReview} إعلان بانتظار المراجعة`);if(pendingPromotions)alerts.push(`${pendingPromotions} طلب ترويج معلق`);if(aiConfigured===false)alerts.push('مفتاح OpenAI غير مُعدّ');const strip=$('#adminAlertStrip');strip.hidden=!alerts.length;strip.innerHTML=alerts.length?`<strong>يحتاج انتباهك:</strong> ${alerts.map(esc).join(' · ')}`:''}
-async function openAdminPanel(){
+async function openAdminPanel(fromRoute=false){
   if(!await requireAdmin())return;
+  if(!fromRoute&&location.pathname!='/admin')history.pushState(null,'','/admin');
   const dialog=$('#adminDialog');if(!dialog.open)dialog.showModal();
   $('#adminStats').innerHTML='<div class="admin-skeleton"></div>'.repeat(4);$('#adminLiveActivity').innerHTML='<p>جاري التحميل...</p>';$('#adminPromotions').innerHTML='';$('#adminAds').innerHTML='';$('#adminReports').innerHTML='';$('#adminUsers').innerHTML='';
   const [adsRes,profilesRes,reportsRes,promotionsRes,messagesRes]=await Promise.all([
@@ -733,9 +749,13 @@ function bindAdminActions(){
   document.querySelectorAll('[data-promotion-reject]').forEach(b=>b.onclick=async()=>{const {error}=await sb.from('promotion_requests').update({status:'rejected',reviewed_at:new Date().toISOString(),reviewed_by:session.user.id}).eq('id',Number(b.dataset.promotionReject));if(error)alert(error.message);else await openAdminPanel()});
   document.querySelectorAll('[data-report-status]').forEach(b=>b.onclick=async()=>{const {error}=await sb.from('reports').update({status:b.dataset.status,reviewed_at:new Date().toISOString(),reviewed_by:session.user.id}).eq('id',Number(b.dataset.reportStatus));if(error)alert(error.message);else await openAdminPanel()});
 }
-$('#adminRefreshBtn').onclick=openAdminPanel;
-$('#adminBtn').onclick=openAdminPanel;
+$('#adminRefreshBtn').onclick=()=>openAdminPanel(true);
+$('#adminBtn').onclick=()=>openAdminPanel(false);
+$('#adminLoginForm').onsubmit=async e=>{e.preventDefault();setAdminLoginStatus('جاري تسجيل الدخول...');const d=new FormData(e.currentTarget),phone=String(d.get('phone')||'').replace(/\D/g,''),password=String(d.get('password')||'');const {error}=await sb.auth.signInWithPassword({email:phoneToEmail(phone),password});if(error){setAdminLoginStatus(error.message,true);return}await refreshSession();if(!isAdmin()){await sb.auth.signOut();session=null;currentProfile=null;setAdminLoginStatus('تم تسجيل الدخول، لكن الحساب ليس مشرفًا.',true);return}setAdminLoginStatus();$('#adminLoginDialog').close();history.replaceState(null,'','/admin');await openAdminPanel(true)};
+$('#adminLogoutBtn').onclick=async()=>{await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();$('#adminDialog').close();history.replaceState(null,'','/admin/login');openAdminLogin('تم تسجيل الخروج من لوحة الإدارة.')};
+$('#adminDialog').addEventListener('close',()=>{if(isAdminPath()&&location.pathname==='/admin')history.replaceState(null,'','/')});
+window.addEventListener('popstate',()=>{if(isAdminPath())handleAdminRoute()});
 $('#detailReport').onclick=reportCurrentAd;
 
 $('#logoutBtn').onclick=async()=>{if(messageChannel)sb.removeChannel(messageChannel);if(notificationChannel)sb.removeChannel(notificationChannel);await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();updateUnreadBadge();updateNotificationBadge();closeDialogs();alert('تم تسجيل الخروج')};
-(async()=>{await loadPublicStats(true);await refreshSession();await updateUnreadBadge();await updateNotificationBadge();await subscribeNotifications();await loadAds();const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();
+(async()=>{await loadPublicStats(true);await refreshSession();await updateUnreadBadge();await updateNotificationBadge();await subscribeNotifications();await loadAds();if(isAdminPath()){await handleAdminRoute();return}const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();

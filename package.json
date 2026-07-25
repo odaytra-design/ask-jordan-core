@@ -1,6 +1,6 @@
 {
   "name": "ask-jordan-core",
-  "version": "3.4.0",
+  "version": "3.6.1",
   "private": true,
   "scripts": {
     "deploy": "wrangler deploy",
