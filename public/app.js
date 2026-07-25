@@ -222,12 +222,12 @@ async function callAskJordanAI(mode,text){
     const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,text}),signal:controller.signal});
     const payload=await r.json().catch(()=>({}));
     if(!r.ok||!payload.ok)throw new Error(payload.error||`AI HTTP ${r.status}`);
-    return payload.data;
+    return {...payload.data,__source:payload.source||'unknown',__model:payload.model||''};
   }finally{clearTimeout(timer)}
 }
 function mergeAIIntent(raw,ai){
   const local=understandQuery(raw),words=Array.isArray(ai?.keywords)?ai.keywords.map(normalizeArabic).filter(Boolean):[];
-  return {...local,category:ai?.category||local.category,gov:ai?.governorate||local.gov,minPrice:Number.isFinite(Number(ai?.minPrice))?Number(ai.minPrice):local.minPrice,maxPrice:Number.isFinite(Number(ai?.maxPrice))?Number(ai.maxPrice):local.maxPrice,year:Number.isFinite(Number(ai?.year))?Number(ai.year):local.year,transmission:ai?.transmission||local.transmission,words:words.length?words:local.words,aiSummary:ai?.summary||''};
+  return {...local,category:ai?.category||local.category,gov:ai?.governorate||local.gov,minPrice:Number.isFinite(Number(ai?.minPrice))?Number(ai.minPrice):local.minPrice,maxPrice:Number.isFinite(Number(ai?.maxPrice))?Number(ai.maxPrice):local.maxPrice,year:Number.isFinite(Number(ai?.year))?Number(ai.year):local.year,transmission:ai?.transmission||local.transmission,words:words.length?words:local.words,aiSummary:ai?.summary||'',aiReply:ai?.assistantReply||'',aiSource:ai?.__source||''};
 }
 function intentSummary(intent){const parts=[];if(intent.words.length)parts.push(intent.words.join(' '));if(intent.category&&!parts.includes(intent.category))parts.push(intent.category);if(intent.gov)parts.push(`في ${intent.gov}`);if(intent.year)parts.push(`موديل ${intent.year}`);if(intent.transmission)parts.push(intent.transmission);if(intent.minPrice!==null&&intent.maxPrice!==null)parts.push(`بين ${money(intent.minPrice)} و${money(intent.maxPrice)}`);else if(intent.maxPrice!==null)parts.push(`حتى ${money(intent.maxPrice)}`);else if(intent.minPrice!==null)parts.push(`من ${money(intent.minPrice)}`);return parts.join(' · ')||intent.raw}
 function suggestionButtons(intent){
@@ -237,15 +237,18 @@ function suggestionButtons(intent){
   if(intent.words.length>1)items.push({label:'بحث أوسع',q:intent.words.slice(0,-1).join(' ')})
   return items.slice(0,3).map(x=>`<button type="button" class="suggestion-chip" data-search-suggestion="${esc(x.q.trim())}">${esc(x.label)}</button>`).join('');
 }
-async function runSmartSearch(raw){
+async function runSmartSearch(raw,precomputedIntent=null,aiAlreadyUsed=false){
   sb.rpc('increment_search_count').then(()=>loadPublicStats(false)).catch(()=>{});
   const reply=$('#assistantReply');reply.hidden=false;reply.textContent='جاري فهم طلبك بالذكاء الاصطناعي...';
-  let intent,usedAI=false;
-  try{const ai=await callAskJordanAI('search',raw);intent=mergeAIIntent(raw,ai);usedAI=true;console.info('Ask Jordan AI search active',ai)}
-  catch(error){console.warn('AI fallback:',error.message);intent=understandQuery(raw)}
+  let intent=precomputedIntent,usedAI=aiAlreadyUsed;
+  if(!intent){
+    try{const ai=await callAskJordanAI('search',raw);intent=mergeAIIntent(raw,ai);usedAI=true;console.info('Ask Jordan AI search active',ai)}
+    catch(error){console.warn('AI fallback:',error.message);intent=understandQuery(raw)}
+  }
   const {results}=searchAdsFromIntent(intent);
   const badge=usedAI?' <span class="ai-live-badge">AI</span>':'';
-  reply.innerHTML=results.length?`فهمت طلبك${badge}: <strong>${esc(intent.aiSummary||intentSummary(intent))}</strong><br>رتبت لك <strong>${results.length}</strong> إعلانًا من الأكثر تطابقًا للأقل.`:`لم أجد تطابقًا دقيقًا لـ <strong>${esc(intent.aiSummary||intentSummary(intent))}</strong>${badge}.<div class="suggestion-row">${suggestionButtons(intent)}</div>`;
+  const aiIntro=usedAI&&intent.aiReply?`${esc(intent.aiReply)}${badge}`:`فهمت طلبك${badge}: <strong>${esc(intent.aiSummary||intentSummary(intent))}</strong>`;
+  reply.innerHTML=results.length?`${aiIntro}<br>وجدت ورتبت لك <strong>${results.length}</strong> إعلانًا من الأكثر تطابقًا للأقل.`:`${aiIntro}<br>لكن ما لقيت إعلانًا مطابقًا حاليًا.<div class="suggestion-row">${suggestionButtons(intent)}</div>`;
   renderAds(results);
   document.querySelectorAll('[data-search-suggestion]').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.searchSuggestion;$('#searchForm').requestSubmit()});
 }
@@ -296,9 +299,21 @@ async function handleBuyerInput(raw,fromChoice=false){
     appendBuyerMessage('أكيد 👍 افتح لك نموذج الإعلان، ومساعد البيع سيعبّيه معك.');setBuyerChoices([]);if(await requireAuth()){$('#heroAddBtn').click()}return;
   }
   if(buyerFlow.active&&buyerFlow.step!=='done'){mergeBuyerAnswer(raw);askNextBuyerQuestion();return}
-  const intent=understandQuery(raw);buyerFlow={active:true,intent,step:null};$('#resetBuyerFlow').hidden=false;
+  let intent,usedAI=false;
+  appendBuyerMessage('لحظة، بفهم طلبك بالذكاء الاصطناعي...');
+  try{
+    const ai=await callAskJordanAI('search',raw);
+    intent=mergeAIIntent(raw,ai);
+    usedAI=true;
+    console.info('Ask Jordan AI buyer flow active',ai);
+  }catch(error){
+    console.warn('AI buyer-flow fallback:',error.message);
+    intent=understandQuery(raw);
+    appendBuyerMessage('خدمة الذكاء غير متاحة مؤقتًا، بكمل معك بالنظام المحلي.');
+  }
+  buyerFlow={active:true,intent,step:null};$('#resetBuyerFlow').hidden=false;
   const enoughDetail=Boolean(intent.category&&intent.gov&&(intent.maxPrice!==null||intent.minPrice!==null||!['سيارات','موبايلات','عقارات','أثاث','أجهزة كهربائية'].includes(intent.category)));
-  if(enoughDetail){appendBuyerMessage(`فهمت طلبك: <strong>${esc(intentSummary(intent))}</strong>`);buyerFlow.step='done';runSmartSearch(raw);document.querySelector('#conversation')?.scrollIntoView({behavior:'smooth',block:'start'});return}
+  if(enoughDetail){appendBuyerMessage(`فهمت طلبك${usedAI?' بالذكاء الاصطناعي':''}: <strong>${esc(intent.aiSummary||intentSummary(intent))}</strong>`);buyerFlow.step='done';runSmartSearch(raw,intent,usedAI);document.querySelector('#conversation')?.scrollIntoView({behavior:'smooth',block:'start'});return}
   askNextBuyerQuestion();
 }
 $('#searchForm').onsubmit=e=>{e.preventDefault();handleBuyerInput($('#searchInput').value)};

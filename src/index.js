@@ -83,13 +83,14 @@ async function handleAI(request, env) {
       const data = await callOpenAI(
         env,
         `أنت محلل بحث لمنصة إعلانات أردنية. افهم اللهجة العربية والأخطاء الإملائية. أعد JSON فقط دون Markdown بالشكل التالي:
-{"category":null,"governorate":null,"minPrice":null,"maxPrice":null,"year":null,"transmission":null,"keywords":[],"summary":""}
+{"category":null,"governorate":null,"minPrice":null,"maxPrice":null,"year":null,"transmission":null,"keywords":[],"summary":"","assistantReply":""}
 القيم المسموحة للتصنيف: سيارات، موبايلات، عقارات، وظائف، أثاث، أجهزة كهربائية، خدمات، متفرقات.
 المحافظات: عمان، إربد، الزرقاء، البلقاء، المفرق، جرش، عجلون، مادبا، الكرك، الطفيلة، معان، العقبة.
-transmission إما أوتوماتيك أو عادي أو null. الأسعار أرقام بالدينار الأردني. لا تخترع معلومة غير موجودة.`,
+transmission إما أوتوماتيك أو عادي أو null. الأسعار أرقام بالدينار الأردني. لا تخترع معلومة غير موجودة.
+assistantReply رد عربي أردني طبيعي وقصير للمستخدم يوضح أنك فهمت طلبه وما الذي ستبحث عنه، دون الادعاء بوجود نتائج لم ترها.`,
         text,
       );
-      return json({ ok: true, mode, data });
+      return json({ ok: true, mode, source: "openai", model: env.OPENAI_MODEL || "gpt-4o-mini", data });
     }
 
     if (mode === "ad") {
@@ -100,7 +101,7 @@ transmission إما أوتوماتيك أو عادي أو null. الأسعار �
 اكتب عنوانًا واضحًا ووصفًا عربيًا طبيعيًا دون ادعاءات مخترعة. التصنيف من: سيارات، موبايلات، عقارات، وظائف، أثاث، أجهزة كهربائية، خدمات، متفرقات. السعر رقم بالدينار أو null. حافظ على المعلومات التي قدمها المستخدم فقط.`,
         text,
       );
-      return json({ ok: true, mode, data });
+      return json({ ok: true, mode, source: "openai", model: env.OPENAI_MODEL || "gpt-4o-mini", data });
     }
 
     return json({ ok: false, error: "mode يجب أن يكون search أو ad" }, 400);
