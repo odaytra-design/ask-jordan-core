@@ -1,15 +1,19 @@
-Ask Jordan v2.9.0 — In-App Notifications
+Ask Jordan v2.7.0 — AI Agent + Saved Search Alerts
 
-المضاف:
-- زر جرس إشعارات مع عداد غير المقروء.
-- إشعار فوري عند وصول رسالة جديدة.
-- إشعار عند نزول إعلان يطابق بحثًا محفوظًا.
-- قائمة إشعارات وفتح الإعلان أو المحادثة مباشرة.
-- تحديد جميع الإشعارات كمقروءة.
-- تحديث لحظي عبر Supabase Realtime.
+- OpenAI search parser
+- AI Agent ranks real marketplace ads
+- Natural Jordanian assistant reply based only on actual ads
+- Smart alternative query when no result exists
+- AI seller assistant
+- Save any search from the results
+- Account dashboard shows current and newly matched ads
+- Run or delete saved searches
 
-الترقية:
-1) تأكد من تشغيل upgrade-v2.7.0.sql
-2) تأكد من تشغيل upgrade-v2.8.0.sql
-3) شغّل upgrade-v2.9.0.sql داخل Supabase SQL Editor
-4) ارفع المشروع على Cloudflare Workers/Pages
+Cloudflare Secret required:
+OPENAI_API_KEY
+
+Optional:
+OPENAI_MODEL=gpt-4o-mini
+
+Database upgrade required:
+Run upgrade-v2.7.0.sql once in Supabase SQL Editor.
