@@ -143,11 +143,25 @@ assistantReply رد عربي أردني طبيعي وقصير للمستخدم �
     if (mode === "ad") {
       const data = await callOpenAI(
         env,
-        `أنت مساعد كتابة إعلانات لمنصة أردنية. أعد JSON فقط دون Markdown بالشكل:
-{"title":"","category":"متفرقات","price":null,"governorate":"","area":"","description":""}
-اكتب عنوانًا واضحًا ووصفًا عربيًا طبيعيًا دون ادعاءات مخترعة. التصنيف من: سيارات، موبايلات، عقارات، وظائف، أثاث، أجهزة كهربائية، خدمات، متفرقات. السعر رقم بالدينار أو null. حافظ على المعلومات التي قدمها المستخدم فقط.`,
+        `أنت AI Seller Assistant لمنصة Ask Jordan. حوّل وصف البائع القصير إلى مسودة إعلان احترافية، وأعد JSON فقط دون Markdown بالشكل:
+{"title":"","category":"متفرقات","price":null,"governorate":"","area":"","description":"","brand":"","model":"","condition":"","tags":[],"qualityScore":0,"qualityTips":[]}
+التصنيف يجب أن يكون واحدًا فقط من: سيارات، موبايلات، عقارات، وظائف، أثاث، أجهزة كهربائية، خدمات، متفرقات.
+اكتب بالعربية الواضحة المناسبة للسوق الأردني. لا تخترع أي معلومة لم يذكرها المستخدم. عند غياب السعر أعد null، وعند غياب المكان أو الماركة أو الموديل أو الحالة أعد نصًا فارغًا. العنوان بحد أقصى 100 حرف، والوصف بين 2 و5 جمل. tags من 2 إلى 6 كلمات قصيرة مستخرجة من النص فقط. qualityScore رقم من 0 إلى 100 يقيس اكتمال المسودة الحالية، وqualityTips حتى 3 نصائح قصيرة عملية لتحسين الإعلان.`,
         text,
       );
+      const categories = new Set(["سيارات","موبايلات","عقارات","وظائف","أثاث","أجهزة كهربائية","خدمات","متفرقات"]);
+      data.title = String(data.title || "").slice(0, 100);
+      data.category = categories.has(data.category) ? data.category : "متفرقات";
+      data.price = Number.isFinite(Number(data.price)) ? Number(data.price) : null;
+      data.governorate = String(data.governorate || "").slice(0, 40);
+      data.area = String(data.area || "").slice(0, 80);
+      data.description = String(data.description || "").slice(0, 1200);
+      data.brand = String(data.brand || "").slice(0, 60);
+      data.model = String(data.model || "").slice(0, 60);
+      data.condition = String(data.condition || "").slice(0, 80);
+      data.tags = Array.isArray(data.tags) ? data.tags.map(x => String(x).slice(0, 30)).filter(Boolean).slice(0, 6) : [];
+      data.qualityScore = Math.max(0, Math.min(100, Math.round(Number(data.qualityScore) || 0)));
+      data.qualityTips = Array.isArray(data.qualityTips) ? data.qualityTips.map(x => String(x).slice(0, 120)).filter(Boolean).slice(0, 3) : [];
       return json({ ok: true, mode, source: "openai", model: env.OPENAI_MODEL || "gpt-4o-mini", data });
     }
 
@@ -161,7 +175,11 @@ assistantReply رد عربي أردني طبيعي وقصير للمستخدم �
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/ai" || url.pathname === "/api/ai/") {
+    if (url.pathname === "/api/ai" || url.pathname === "/api/ai/" || url.pathname === "/api/ai/generate-ad" || url.pathname === "/api/ai/generate-ad/") {
+      if (url.pathname.includes("generate-ad") && request.method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        request = new Request(request.url, { method: "POST", headers: request.headers, body: JSON.stringify({ ...body, mode: "ad" }) });
+      }
       return handleAI(request, env);
     }
     return env.ASSETS.fetch(request);
