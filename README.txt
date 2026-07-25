@@ -1,14 +1,19 @@
-Ask Jordan v2.3.0 — GitHub Ready
+ASK JORDAN — Worker + OpenAI
 
-الجديد:
-- واجهة رئيسية أقرب لتجربة ChatGPT.
-- مساعد شراء محادثي يسأل خطوة بخطوة.
-- دعم نوع ناقل الحركة للسيارات: أوتوماتيك أو عادي.
-- فلترة نتائج السيارات حسب ناقل الحركة من الوصف والعنوان.
-- نشاط مباشر متجدد تلقائيًا من أحدث الإعلانات.
-- تحسينات حركة وتركيز ووضوح للواجهة.
-- عدادات المنصة المتحركة محفوظة.
+هيكل الرفع إلى جذر GitHub:
+public/
+src/index.js
+wrangler.jsonc
+package.json
 
-طريقة الرفع:
-ارفع جميع الملفات إلى جذر مستودع GitHub ثم Commit.
-لا يحتاج هذا الإصدار إلى SQL جديد.
+Cloudflare deploy command:
+npx wrangler deploy
+
+المتغير السري المطلوب:
+OPENAI_API_KEY
+
+اختبار الخدمة بعد النشر:
+GET /api/ai
+يجب أن يعيد keyConfigured: true
+
+لا تضع مفتاح OpenAI داخل GitHub أو config.js.
