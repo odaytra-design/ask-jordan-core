@@ -12,11 +12,21 @@
   <div class="brand"><span class="logo">JO</span><div><h1>اسأل الأردن</h1><p>كل السوق في سؤال واحد</p></div></div>
   <div class="top-actions"><button id="adminBtn" class="ghost" hidden>لوحة المشرف</button><button id="accountBtn" class="ghost">حسابي</button><button id="addBtn" class="primary">+ أضف إعلان</button></div>
 </header>
+<section class="growth-strip" aria-label="إحصاءات المنصة">
+  <div><span>👁️</span><strong id="visitCount">0</strong><small>زيارة</small></div>
+  <div><span>📦</span><strong id="activeAdCount">0</strong><small>إعلان نشط</small></div>
+  <div><span>👥</span><strong id="userCount">0</strong><small>مستخدم</small></div>
+  <div><span>🔍</span><strong id="searchCount">0</strong><small>عملية بحث</small></div>
+</section>
 <main class="chat-shell">
   <section class="welcome">
     <span class="mini-logo">JO</span>
     <h2>شو بتدور عليه اليوم؟</h2>
     <p>اكتب طلبك بطريقتك، والذكاء يرتّب لك النتائج مباشرة.</p><div class="quick-prompts"><button type="button" data-prompt="بدي كامري 2018 أقل من 12000 دينار في عمان">سيارة في إربد</button><button type="button" data-prompt="بدي آيفون أقل من 300 دينار في عمان">آيفون أقل من 300</button><button type="button" data-prompt="شقق للإيجار في الزرقاء">شقق للإيجار</button><button type="button" data-prompt="وظائف في عمان">وظائف في عمان</button></div>
+  </section>
+  <section id="featuredSection" class="featured-section" hidden>
+    <div class="section-heading"><div><span class="eyebrow">⭐ عروض مميزة</span><h3>إعلانات تستحق المشاهدة</h3></div><button type="button" id="showAllAdsBtn" class="ghost">عرض الكل</button></div>
+    <div id="featuredAds" class="featured-grid"></div>
   </section>
   <section id="conversation" class="conversation">
     <div class="assistant-bubble">أهلًا فيك 👋 احكيلي شو بدك، مثلاً: <strong>بدي سيارة أقل من 7000 في إربد</strong>.</div><div id="assistantReply" class="assistant-bubble smart-reply" hidden></div>
@@ -34,7 +44,8 @@
 <dialog id="detailsDialog"><section class="panel detail-panel"><button type="button" class="close" data-close="detailsDialog">×</button><div class="gallery"><img id="detailImage" alt=""><div id="detailPlaceholder" class="placeholder">📦</div><button id="prevImage" class="gallery-nav prev" type="button">‹</button><button id="nextImage" class="gallery-nav next" type="button">›</button><span id="detailCounter" class="gallery-count"></span></div><h3 id="detailTitle"></h3><div id="detailPrice" class="price"></div><div id="detailMeta" class="meta"></div><p id="detailDescription" class="detail-description"></p><div class="detail-actions"><a id="detailCall">اتصال</a><a id="detailWhatsapp" target="_blank" rel="noopener">واتساب</a><button id="detailShare" type="button">مشاركة</button><button id="detailFavorite" type="button">♡ حفظ</button><button id="detailSeller" type="button">ملف البائع</button><button id="detailReport" type="button" class="report-button">إبلاغ</button></div><section class="related-section"><h4>إعلانات مشابهة</h4><div id="relatedAds" class="related-ads"></div></section></section></dialog>
 <dialog id="sellerDialog"><section class="panel seller-panel"><button type="button" class="close" data-close="sellerDialog">×</button><h3 id="sellerName">البائع</h3><p id="sellerMeta" class="meta"></p><div id="sellerActions" class="seller-actions"></div><h4>إعلانات البائع</h4><div id="sellerAds" class="seller-ads"></div></section></dialog>
 
-<dialog id="adminDialog"><section class="panel admin-panel"><button type="button" class="close" data-close="adminDialog">×</button><div class="admin-title"><div><h3>لوحة المشرف</h3><p class="hint">إدارة الإعلانات والبلاغات ومراجعة المستخدمين.</p></div><span class="admin-badge">ADMIN</span></div><div id="adminStats" class="admin-stats"></div><section class="admin-section"><h4>البلاغات</h4><div id="adminReports" class="admin-list"></div></section><section class="admin-section"><h4>إدارة الإعلانات</h4><div id="adminAds" class="admin-list"></div></section><section class="admin-section"><h4>المستخدمون</h4><div id="adminUsers" class="admin-list"></div></section></section></dialog>
+<dialog id="promotionDialog"><form id="promotionForm" class="panel"><button type="button" class="close" data-close="promotionDialog">×</button><h3>روّج إعلانك</h3><p class="hint">اختر الباقة، ثم أرسل الطلب. سنفتح واتساب لإتمام الدفع وتفعيل الإعلان.</p><input type="hidden" name="ad_id" id="promotionAdId"><label>الإعلان<input id="promotionAdTitle" disabled></label><label>الباقة<select name="plan" required><option value="day">يوم واحد — 1 د.أ</option><option value="week">أسبوع — 5 د.أ</option><option value="month">شهر — 15 د.أ</option></select></label><button class="primary wide" type="submit">إرسال طلب الترويج</button><p id="promotionStatus" class="publish-status" hidden></p></form></dialog>
+<dialog id="adminDialog"><section class="panel admin-panel"><button type="button" class="close" data-close="adminDialog">×</button><div class="admin-title"><div><h3>لوحة المشرف</h3><p class="hint">إدارة الإعلانات والبلاغات ومراجعة المستخدمين.</p></div><span class="admin-badge">ADMIN</span></div><div id="adminStats" class="admin-stats"></div><section class="admin-section"><h4>طلبات الترويج</h4><div id="adminPromotions" class="admin-list"></div></section><section class="admin-section"><h4>البلاغات</h4><div id="adminReports" class="admin-list"></div></section><section class="admin-section"><h4>إدارة الإعلانات</h4><div id="adminAds" class="admin-list"></div></section><section class="admin-section"><h4>المستخدمون</h4><div id="adminUsers" class="admin-list"></div></section></section></dialog>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
