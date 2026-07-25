@@ -1,19 +1,21 @@
-Ask Jordan v2.4.1 — Cloudflare Workers + GitHub
+Ask Jordan v2.4.0 — OpenAI Connected
 
-هذه النسخة مهيأة لمشروع Workers المنشور من GitHub.
+تم ربط الذكاء الاصطناعي فعليًا عبر Cloudflare Pages Functions:
+- فهم طلب البحث باللغة الطبيعية عبر OpenAI.
+- استخراج التصنيف والمحافظة والسعر والسنة وناقل الحركة والكلمات المفتاحية.
+- ترتيب الإعلانات محليًا حسب نتيجة فهم الذكاء.
+- كتابة الإعلان تلقائيًا: عنوان، تصنيف، سعر، محافظة، منطقة ووصف.
+- رجوع تلقائي للنظام المحلي عند تعذر خدمة OpenAI.
+- المفتاح لا يوجد داخل المشروع ولا GitHub.
 
-الملفات المهمة:
-- src/index.js: Worker API + تقديم ملفات الموقع
-- public/: واجهة الموقع
-- wrangler.jsonc: إعداد Worker وStatic Assets
+متطلبات Cloudflare:
+1) متغير Secret باسم OPENAI_API_KEY (تمت إضافته حسب تأكيدك).
+2) اختياري: متغير OPENAI_MODEL لتغيير النموذج. الافتراضي gpt-4o-mini.
+3) أعد النشر بعد رفع الملفات حتى تتفعّل Pages Functions.
 
-متغير Cloudflare السري المطلوب:
-OPENAI_API_KEY
+اختبار الربط بعد النشر:
+- افتح /api/ai ويجب أن يظهر: {"ok":true,"service":"Ask Jordan AI"}
+- جرّب بحث: كامري 2019 أوتوماتيك أقل من 12000 في إربد.
+- جرّب مساعد البيع بنص إعلان كامل.
 
-اختبار بعد النشر:
-1) افتح https://YOUR-WORKER.workers.dev/api/ai
-2) يجب أن يظهر JSON يحتوي:
-   "ok": true
-   "runtime": "Cloudflare Workers"
-
-ملاحظة: لا تضع مفتاح OpenAI داخل GitHub أو config.js.
+لا يحتاج SQL جديد.
