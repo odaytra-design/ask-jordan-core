@@ -1,15 +1,14 @@
-Ask Jordan Core v2.0.0 — WOW Homepage
+Ask Jordan v2.3.0 — GitHub Ready
 
-New in this release:
-- Compact live statistics bar.
-- New ChatGPT-style hero and search experience.
-- Free-ad call to action above the fold.
-- Popular category shortcuts.
-- Live activity section driven by recent real ads.
-- Featured ads remain integrated.
-- Improved responsive mobile layout.
-- Existing Supabase, admin, reports, promotions, favorites, seller pages, and smart search are preserved.
+الجديد:
+- واجهة رئيسية أقرب لتجربة ChatGPT.
+- مساعد شراء محادثي يسأل خطوة بخطوة.
+- دعم نوع ناقل الحركة للسيارات: أوتوماتيك أو عادي.
+- فلترة نتائج السيارات حسب ناقل الحركة من الوصف والعنوان.
+- نشاط مباشر متجدد تلقائيًا من أحدث الإعلانات.
+- تحسينات حركة وتركيز ووضوح للواجهة.
+- عدادات المنصة المتحركة محفوظة.
 
-Deployment:
-Upload all files to the root of the GitHub repository and commit.
-No new SQL migration is required if upgrade-v1.7.0.sql and upgrade-v1.8.0.sql were already applied.
+طريقة الرفع:
+ارفع جميع الملفات إلى جذر مستودع GitHub ثم Commit.
+لا يحتاج هذا الإصدار إلى SQL جديد.

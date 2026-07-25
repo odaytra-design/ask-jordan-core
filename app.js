@@ -4,6 +4,8 @@ const $=s=>document.querySelector(s);
 let session=null,currentProfile=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false;
 let favorites=new Set(JSON.parse(localStorage.getItem('askJordanFavorites')||'[]').map(Number));
 let analytics=JSON.parse(localStorage.getItem('askJordanAnalytics')||'{}');
+let buyerFlow={active:false,intent:null,step:null};
+let sellerFlow={active:false,step:null,data:{}};
 const phoneToEmail=p=>`${String(p).replace(/\D/g,'')}@users.askjordan.com`;
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const money=v=>Number(v)?`${Number(v).toLocaleString('ar-JO')} د.أ`:'السعر عند التواصل';
@@ -106,12 +108,14 @@ function setAuthMode(m){authMode=m;const s=m==='signup';$('#authTitle').textCont
 $('#toggleAuth').onclick=()=>setAuthMode(authMode==='login'?'signup':'login');
 $('#authForm').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget),phone=String(d.get('phone')).replace(/\D/g,''),password=String(d.get('password')),email=phoneToEmail(phone);let r;if(authMode==='signup'){r=await sb.auth.signUp({email,password,options:{data:{phone,name:String(d.get('name')||'')}}})}else{r=await sb.auth.signInWithPassword({email,password})}if(r.error){alert(r.error.message);return}await refreshSession();closeDialogs();e.currentTarget.reset();alert(authMode==='signup'?'تم إنشاء الحساب':'تم تسجيل الدخول')};
 async function fetchImages(){const {data,error}=await sb.from('ad_images').select('*').order('sort_order',{ascending:true});if(error){console.warn('Images load:',error.message);return []}return (data||[]).map(normalizeImage)}
+let liveActivityOffset=0,liveActivityTimer=null;
 function renderLiveActivity(){
   const section=$('#liveActivitySection'),box=$('#liveActivity');if(!section||!box)return;
-  const recent=ads.slice(0,6);section.hidden=!recent.length;if(!recent.length)return;
-  const now=Date.now();
-  box.innerHTML=recent.slice(0,3).map((a,i)=>{const mins=Math.max(1,Math.floor((now-new Date(a.created_at||now).getTime())/60000));const label=mins<60?`قبل ${mins} دقيقة`:`اليوم`;return `<button type="button" class="activity-item" data-activity-ad="${a.id}"><span class="activity-icon">${i%2?'🔎':'✨'}</span><span><strong>إعلان جديد: ${esc(a.title)}</strong><small>${esc(a.governorate)} · ${label}</small></span></button>`}).join('');
+  const recent=ads.slice(0,9);section.hidden=!recent.length;if(!recent.length)return;
+  const now=Date.now(),visible=[];for(let i=0;i<Math.min(3,recent.length);i++)visible.push(recent[(liveActivityOffset+i)%recent.length]);
+  box.innerHTML=visible.map((a,i)=>{const mins=Math.max(1,Math.floor((now-new Date(a.created_at||now).getTime())/60000));const label=mins<60?`قبل ${mins} دقيقة`:mins<1440?`قبل ${Math.floor(mins/60)} ساعة`:'اليوم';return `<button type="button" class="activity-item activity-enter" data-activity-ad="${a.id}"><span class="activity-icon">${i%2?'🔎':'✨'}</span><span><strong>${i===0?'وصل الآن':'إعلان جديد'}: ${esc(a.title)}</strong><small>${esc(a.governorate)} · ${label}</small></span></button>`}).join('');
   document.querySelectorAll('[data-activity-ad]').forEach(b=>b.onclick=()=>openDetails(Number(b.dataset.activityAd)));
+  clearInterval(liveActivityTimer);if(recent.length>3)liveActivityTimer=setInterval(()=>{liveActivityOffset=(liveActivityOffset+1)%recent.length;renderLiveActivity()},6500);
 }
 async function loadAds(){
   $('#status').textContent='جاري تحميل الإعلانات...';
@@ -189,11 +193,12 @@ function understandQuery(raw){
   const category=Object.entries(categoryAliases).find(([,words])=>words.some(w=>q.includes(normalizeArabic(w))))?.[0]||null;
   const yearMatch=q.match(/\b(19[8-9]\d|20[0-3]\d)\b/);
   const year=yearMatch?Number(yearMatch[1]):null;
+  const transmission=/\b(اوتوماتيك|اوتوماتك|اتوماتيك|automatic)\b/.test(q)?'أوتوماتيك':/\b(عادي|يدوي|manual)\b/.test(q)?'عادي':null;
   const stop=['موديل','سنة','سنه','بدي','بدّي','اريد','أريد','دور','دورلي','ابحث','عن','اقل','اكثر','من','في','على','دينار','داخل','تحت','فوق','حدود','بحدود','ما','يتجاوز','بسعر','سعر','لحد','الى','بين','و'];
   const stopN=stop.map(normalizeArabic);
   const govTokens=Object.values(governorateAliases).flat().map(normalizeArabic);
   const words=q.split(/\s+/).filter(w=>w.length>1&&!stopN.includes(w)&&!govTokens.includes(w)&&!/^(\d|الف|k)/i.test(w));
-  return {raw,q,minPrice,maxPrice,gov,category,year,words};
+  return {raw,q,minPrice,maxPrice,gov,category,year,transmission,words};
 }
 function scoreAd(a,intent){
   const hay=normalizeArabic(`${a.title} ${a.category} ${a.governorate} ${a.area} ${a.description}`);
@@ -204,12 +209,13 @@ function scoreAd(a,intent){
   if(intent.maxPrice!==null&&price>0){if(price>intent.maxPrice)return -1;score+=12-Math.min(10,Math.round((intent.maxPrice-price)/Math.max(intent.maxPrice,1)*10))}
   if(intent.minPrice!==null&&price<intent.minPrice)return -1;
   if(intent.year){if(hay.includes(String(intent.year)))score+=28;else return -1}
+  if(intent.transmission){const variants=intent.transmission==='أوتوماتيك'?['اوتوماتيك','اوتوماتك','اتوماتيك','automatic']:['عادي','يدوي','manual'];if(variants.some(v=>hay.includes(normalizeArabic(v))))score+=24;else return -1}
   for(const word of intent.words){const variants=expandWord(word);if(variants.some(v=>hay.includes(v)))score+=18;else if(word.length>=4&&variants.some(v=>hay.split(' ').some(t=>t.startsWith(v.slice(0,Math.max(3,v.length-1))))))score+=8;else score-=5}
   if(a.created_at)score+=Math.max(0,5-Math.floor((Date.now()-new Date(a.created_at))/86400000/7));
   return score;
 }
 function searchAds(raw){const intent=understandQuery(raw);return {intent,results:ads.map(a=>({a,score:scoreAd(a,intent)})).filter(x=>x.score>=0).sort((x,y)=>y.score-x.score).map(x=>x.a)}}
-function intentSummary(intent){const parts=[];if(intent.words.length)parts.push(intent.words.join(' '));if(intent.category&&!parts.includes(intent.category))parts.push(intent.category);if(intent.gov)parts.push(`في ${intent.gov}`);if(intent.year)parts.push(`موديل ${intent.year}`);if(intent.minPrice!==null&&intent.maxPrice!==null)parts.push(`بين ${money(intent.minPrice)} و${money(intent.maxPrice)}`);else if(intent.maxPrice!==null)parts.push(`حتى ${money(intent.maxPrice)}`);else if(intent.minPrice!==null)parts.push(`من ${money(intent.minPrice)}`);return parts.join(' · ')||intent.raw}
+function intentSummary(intent){const parts=[];if(intent.words.length)parts.push(intent.words.join(' '));if(intent.category&&!parts.includes(intent.category))parts.push(intent.category);if(intent.gov)parts.push(`في ${intent.gov}`);if(intent.year)parts.push(`موديل ${intent.year}`);if(intent.transmission)parts.push(intent.transmission);if(intent.minPrice!==null&&intent.maxPrice!==null)parts.push(`بين ${money(intent.minPrice)} و${money(intent.maxPrice)}`);else if(intent.maxPrice!==null)parts.push(`حتى ${money(intent.maxPrice)}`);else if(intent.minPrice!==null)parts.push(`من ${money(intent.minPrice)}`);return parts.join(' · ')||intent.raw}
 function suggestionButtons(intent){
   const items=[];
   if(intent.maxPrice!==null)items.push({label:'وسّع السعر 20%',q:intent.raw.replace(/\d+(?:[.,]\d+)?\s*(?:الف|k)?/i,String(Math.round(intent.maxPrice*1.2)))})
@@ -224,11 +230,102 @@ async function runSmartSearch(raw){
   renderAds(results);
   document.querySelectorAll('[data-search-suggestion]').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.searchSuggestion;$('#searchForm').requestSubmit()});
 }
-$('#searchForm').onsubmit=e=>{e.preventDefault();const raw=$('#searchInput').value.trim();if(!raw)return;const bubble=document.createElement('div');bubble.className='user-bubble';bubble.textContent=raw;$('#conversation').insertBefore(bubble,$('#assistantReply'));$('#searchInput').value='';runSmartSearch(raw)};
-document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.prompt;$('#searchForm').requestSubmit()});
-function resetAdForm(){editingAdId=null;$('#adDialogTitle').textContent='إضافة إعلان';$('#adSubmit').textContent='نشر الإعلان';$('#adImagesHint').hidden=true;$('#publishStatus').hidden=true;$('#adForm').reset();$('#imagePreview').innerHTML='';$('#sellerAssistantStatus').textContent='';restoreAdDraft()}
+function appendBuyerMessage(text,kind='assistant'){
+  const box=$('#buyerConversation');if(!box)return;
+  const msg=document.createElement('div');msg.className=`buyer-message ${kind}`;msg.innerHTML=kind==='assistant'?text:esc(text);box.appendChild(msg);box.scrollTop=box.scrollHeight;
+}
+function setBuyerChoices(items=[]){
+  const box=$('#buyerChoices');if(!box)return;box.hidden=!items.length;
+  box.innerHTML=items.map(x=>`<button type="button" data-buyer-choice="${esc(x.value)}">${esc(x.label)}</button>`).join('');
+  box.querySelectorAll('[data-buyer-choice]').forEach(b=>b.onclick=()=>handleBuyerInput(b.dataset.buyerChoice,true));
+}
+function resetBuyerFlow(showGreeting=true){
+  buyerFlow={active:false,intent:null,step:null};setBuyerChoices([]);$('#resetBuyerFlow').hidden=true;
+  if(showGreeting){$('#buyerConversation').innerHTML='<div class="buyer-message assistant">مرحبًا 👋 اكتب ما تبحث عنه، مثل: <strong>بدي سيارة</strong>.</div>'}
+}
+function intentToQuery(intent){
+  const parts=[];
+  if(intent.words?.length)parts.push(intent.words.join(' '));else if(intent.category)parts.push(intent.category);
+  if(intent.year)parts.push(String(intent.year));if(intent.transmission)parts.push(intent.transmission);if(intent.maxPrice!==null)parts.push(`أقل من ${intent.maxPrice}`);if(intent.minPrice!==null)parts.push(`أكثر من ${intent.minPrice}`);if(intent.gov)parts.push(`في ${intent.gov}`);
+  return parts.join(' ').trim();
+}
+function askNextBuyerQuestion(){
+  const intent=buyerFlow.intent;
+  $('#resetBuyerFlow').hidden=false;
+  if(!intent.category){buyerFlow.step='category';appendBuyerMessage('شو نوع الشيء اللي بتدور عليه؟');setBuyerChoices(Object.keys(categoryAliases).map(x=>({label:x,value:x})));return}
+  if(!intent.gov){buyerFlow.step='gov';appendBuyerMessage('ممتاز 👌 بأي محافظة بدك تبحث؟');setBuyerChoices(governorates.map(x=>({label:x,value:x})));return}
+  if(intent.category==='سيارات'&&!intent.transmission){buyerFlow.step='transmission';appendBuyerMessage('بدك السيارة أوتوماتيك ولا عادي؟');setBuyerChoices([{label:'أوتوماتيك',value:'أوتوماتيك'},{label:'عادي',value:'عادي'},{label:'ما بفرق',value:'ما بفرق'}]);return}
+  if(intent.maxPrice===null&&intent.minPrice===null&&['سيارات','موبايلات','عقارات','أثاث','أجهزة كهربائية'].includes(intent.category)){buyerFlow.step='price';appendBuyerMessage('شو أعلى ميزانية مناسبة إلك؟ اكتب الرقم بالدينار، أو اختر بدون تحديد.');setBuyerChoices([{label:'بدون تحديد سعر',value:'بدون تحديد'},{label:'أقل من 300',value:'300'},{label:'أقل من 1000',value:'1000'},{label:'أقل من 10000',value:'10000'}]);return}
+  buyerFlow.step='done';setBuyerChoices([]);const query=intentToQuery(intent);appendBuyerMessage(`تمام، ببحث لك عن: <strong>${esc(intentSummary(intent))}</strong>`);runSmartSearch(query);document.querySelector('#conversation')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function mergeBuyerAnswer(raw){
+  const answer=understandQuery(raw),intent=buyerFlow.intent;
+  if(buyerFlow.step==='category')intent.category=answer.category||Object.keys(categoryAliases).find(x=>normalizeArabic(x)===normalizeArabic(raw))||intent.category;
+  else if(buyerFlow.step==='gov')intent.gov=answer.gov||governorates.find(x=>normalizeArabic(x)===normalizeArabic(raw))||intent.gov;
+  else if(buyerFlow.step==='transmission'){intent.transmission=/فرق/.test(raw)?null:(answer.transmission||raw);}
+  else if(buyerFlow.step==='price'){
+    if(normalizeArabic(raw).includes('بدون تحديد')){intent.maxPrice=null;intent.minPrice=null;intent.skipPrice=true}
+    else{const n=parseCompactNumber(raw);if(n!==null)intent.maxPrice=n}
+  }
+  if(answer.words?.length&&buyerFlow.step!=='category'&&buyerFlow.step!=='gov')intent.words=[...new Set([...(intent.words||[]),...answer.words])];
+}
+async function handleBuyerInput(raw,fromChoice=false){
+  raw=String(raw||'').trim();if(!raw)return;
+  appendBuyerMessage(raw,'user');$('#searchInput').value='';
+  const normalized=normalizeArabic(raw);
+  if(/\b(ابيع|بيع|اعرض|انشر)\b/.test(normalized)||normalized==='بدي ابيع'){
+    appendBuyerMessage('أكيد 👍 افتح لك نموذج الإعلان، ومساعد البيع سيعبّيه معك.');setBuyerChoices([]);if(await requireAuth()){$('#heroAddBtn').click()}return;
+  }
+  if(buyerFlow.active&&buyerFlow.step!=='done'){mergeBuyerAnswer(raw);askNextBuyerQuestion();return}
+  const intent=understandQuery(raw);buyerFlow={active:true,intent,step:null};$('#resetBuyerFlow').hidden=false;
+  const enoughDetail=Boolean(intent.category&&intent.gov&&(intent.maxPrice!==null||intent.minPrice!==null||!['سيارات','موبايلات','عقارات','أثاث','أجهزة كهربائية'].includes(intent.category)));
+  if(enoughDetail){appendBuyerMessage(`فهمت طلبك: <strong>${esc(intentSummary(intent))}</strong>`);buyerFlow.step='done';runSmartSearch(raw);document.querySelector('#conversation')?.scrollIntoView({behavior:'smooth',block:'start'});return}
+  askNextBuyerQuestion();
+}
+$('#searchForm').onsubmit=e=>{e.preventDefault();handleBuyerInput($('#searchInput').value)};
+document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>handleBuyerInput(b.dataset.prompt,true));
+$('#resetBuyerFlow').onclick=()=>{resetBuyerFlow(true);$('#searchInput').focus()};
+function appendSellerMessage(text,kind='assistant'){
+  const box=$('#sellerConversation');if(!box)return;const m=document.createElement('div');m.className=`seller-message ${kind}`;m.innerHTML=kind==='assistant'?text:esc(text);box.appendChild(m);box.scrollTop=box.scrollHeight;
+}
+function setSellerChoices(items=[]){
+  const box=$('#sellerChoices');if(!box)return;box.innerHTML=items.map(x=>`<button type="button" data-seller-choice="${esc(x.value)}">${esc(x.label)}</button>`).join('');
+  box.querySelectorAll('[data-seller-choice]').forEach(b=>b.onclick=()=>handleSellerWizardAnswer(b.dataset.sellerChoice));
+}
+function resetSellerWizard(){
+  sellerFlow={active:true,step:'title',data:{}};
+  if($('#sellerConversation'))$('#sellerConversation').innerHTML='<div class="seller-message assistant">شو بدك تبيع اليوم؟</div>';
+  setSellerChoices([{label:'📱 موبايل',value:'موبايل'},{label:'🚗 سيارة',value:'سيارة'},{label:'🏠 عقار',value:'عقار'},{label:'🪑 أثاث',value:'أثاث'}]);
+  if($('#sellerWizardInput')){$('#sellerWizardInput').value='';$('#sellerWizardInput').placeholder='مثال: آيفون 14 برو'}
+}
+function wizardCategory(value){return detectCategoryFromText(value)||'متفرقات'}
+function finishSellerWizard(){
+  const e=$('#adForm').elements,d=sellerFlow.data;
+  e.title.value=d.title||'';e.category.value=d.category||wizardCategory(d.title||'');e.price.value=d.price||'';if(d.governorate)e.governorate.value=d.governorate;e.area.value=d.area||'';e.description.value=d.description||`${d.title||'المنتج'} بحالة جيدة. للتواصل والاستفسار عبر الهاتف أو واتساب.`;
+  appendSellerMessage('تم تجهيز الإعلان ✅ راجع البيانات والصور ثم اضغط <strong>نشر الإعلان</strong>.');setSellerChoices([]);sellerFlow.step='done';saveAdDraft();
+}
+function handleSellerWizardAnswer(raw){
+  const value=String(raw||'').trim();if(!value||sellerFlow.step==='done')return;appendSellerMessage(value,'user');const input=$('#sellerWizardInput');if(input)input.value='';
+  const d=sellerFlow.data;
+  if(sellerFlow.step==='title'){
+    d.title=value;d.category=wizardCategory(value);sellerFlow.step='price';appendSellerMessage('كم السعر؟ اكتب الرقم أو اختر قابل للتفاوض.');setSellerChoices([{label:'قابل للتفاوض',value:'قابل للتفاوض'},{label:'50 د.أ',value:'50'},{label:'100 د.أ',value:'100'},{label:'500 د.أ',value:'500'}]);if(input)input.placeholder='مثال: 450';return;
+  }
+  if(sellerFlow.step==='price'){
+    d.price=/تفاوض/.test(value)?'':parseCompactNumber(value)||'';sellerFlow.step='governorate';appendSellerMessage('بأي محافظة؟');setSellerChoices(governorates.map(g=>({label:g,value:g})));if(input)input.placeholder='اكتب المحافظة';return;
+  }
+  if(sellerFlow.step==='governorate'){
+    d.governorate=detectGovernorateFromText(value)||value;sellerFlow.step='area';appendSellerMessage('شو المنطقة أو الحي؟');setSellerChoices([]);if(input)input.placeholder='مثال: الحي الشرقي';return;
+  }
+  if(sellerFlow.step==='area'){
+    d.area=value;sellerFlow.step='description';appendSellerMessage('احكيلي أهم التفاصيل والحالة.');setSellerChoices([{label:'جديد',value:'جديد ولم يُستخدم'},{label:'مستعمل بحالة ممتازة',value:'مستعمل بحالة ممتازة'},{label:'بحالة جيدة',value:'بحالة جيدة'}]);if(input)input.placeholder='مثال: نظيف جدًا ومعه الكرتونة';return;
+  }
+  if(sellerFlow.step==='description'){d.description=value;finishSellerWizard()}
+}
+function resetAdForm(){editingAdId=null;$('#adDialogTitle').textContent='إضافة إعلان';$('#adSubmit').textContent='نشر الإعلان';$('#adImagesHint').hidden=true;$('#publishStatus').hidden=true;$('#adForm').reset();$('#imagePreview').innerHTML='';$('#sellerAssistantStatus').textContent='';restoreAdDraft();resetSellerWizard()}
 $('#generateAdBtn').onclick=()=>{const text=$('#sellerPrompt').value.trim(),status=$('#sellerAssistantStatus');if(!text){status.textContent='اكتب وصفًا سريعًا للإعلان أولًا.';return}const r=buildSmartAd(text),e=$('#adForm').elements;e.title.value=r.title;e.category.value=r.category;if(r.price)e.price.value=r.price;if(r.governorate)e.governorate.value=r.governorate;if(r.area)e.area.value=r.area;e.description.value=r.description;status.textContent='تمت تعبئة الإعلان. راجع البيانات ثم انشر.';saveAdDraft()};
 $('#clearDraftBtn').onclick=()=>{clearAdDraft();$('#adForm').reset();$('#sellerAssistantStatus').textContent='تم مسح المسودة.'};
+$('#sellerWizardSend').onclick=()=>handleSellerWizardAnswer($('#sellerWizardInput').value);
+$('#sellerWizardInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();handleSellerWizardAnswer(e.currentTarget.value)}};
 $('#adImagesInput').addEventListener('change',e=>renderImagePreview(e.target.files));
 $('#adForm').addEventListener('input',()=>{clearTimeout(window.__draftTimer);window.__draftTimer=setTimeout(saveAdDraft,350)});
 $('#addBtn').onclick=async()=>{if(!await requireAuth())return;resetAdForm();const {data:p}=await sb.from('profiles').select('phone').eq('id',session.user.id).single();$('#adForm').elements.phone.value=p?.phone||'';$('#adDialog').showModal()};
