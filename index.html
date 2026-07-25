@@ -720,6 +720,7 @@ function setAdminAlerts({openReports,pendingReview,pendingPromotions,aiConfigure
 async function openAdminPanel(fromRoute=false){
   if(!await requireAdmin())return;
   if(!fromRoute&&location.pathname!='/admin')history.pushState(null,'','/admin');
+  document.body.classList.add('admin-route');
   const dialog=$('#adminDialog');if(!dialog.open)dialog.showModal();
   $('#adminStats').innerHTML='<div class="admin-skeleton"></div>'.repeat(4);$('#adminLiveActivity').innerHTML='<p>جاري التحميل...</p>';$('#adminPromotions').innerHTML='';$('#adminAds').innerHTML='';$('#adminReports').innerHTML='';$('#adminUsers').innerHTML='';
   const [adsRes,profilesRes,reportsRes,promotionsRes,messagesRes]=await Promise.all([
@@ -742,7 +743,7 @@ async function openAdminPanel(fromRoute=false){
   bindAdminActions();
 }
 function bindAdminActions(){
-  document.querySelectorAll('[data-admin-jump]').forEach(b=>b.onclick=()=>document.querySelector(`#admin${b.dataset.adminJump[0].toUpperCase()+b.dataset.adminJump.slice(1)}Section`)?.scrollIntoView({behavior:'smooth',block:'start'}));
+  document.querySelectorAll('[data-admin-jump]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.admin-nav button').forEach(x=>x.classList.toggle('active',x===b||x.dataset.adminJump===b.dataset.adminJump));document.querySelector(`#admin${b.dataset.adminJump[0].toUpperCase()+b.dataset.adminJump.slice(1)}Section`)?.scrollIntoView({behavior:'smooth',block:'start'})});
   document.querySelectorAll('[data-admin-open]').forEach(b=>b.onclick=()=>{const id=Number(b.dataset.adminOpen),a=ads.find(x=>Number(x.id)===id);if(a){$('#adminDialog').close();openDetails(id)}else alert('هذا الإعلان غير ظاهر للعامة حاليًا. استخدم إدارة الحالة من اللوحة.')});
   document.querySelectorAll('[data-admin-status]').forEach(b=>b.onclick=async()=>{const id=Number(b.dataset.adminStatus),status=b.dataset.status;if(!confirm(`تغيير حالة الإعلان إلى ${statusLabel(status)}؟`))return;const {error}=await sb.from('ads').update({status,updated_at:new Date().toISOString()}).eq('id',id);if(error)alert(error.message);else{await loadAds();await openAdminPanel()}});
   document.querySelectorAll('[data-promotion-approve]').forEach(b=>b.onclick=async()=>{if(!confirm('تأكيد الدفع وتفعيل الإعلان المميز؟'))return;const until=new Date(Date.now()+Number(b.dataset.days)*86400000).toISOString();const {error:e1}=await sb.from('ads').update({featured_until:until}).eq('id',Number(b.dataset.ad));if(e1){alert(e1.message);return}const {error:e2}=await sb.from('promotion_requests').update({status:'approved',reviewed_at:new Date().toISOString(),reviewed_by:session.user.id}).eq('id',Number(b.dataset.promotionApprove));if(e2)alert(e2.message);else{await loadAds();await openAdminPanel()}});
@@ -753,7 +754,7 @@ $('#adminRefreshBtn').onclick=()=>openAdminPanel(true);
 $('#adminBtn').onclick=()=>openAdminPanel(false);
 $('#adminLoginForm').onsubmit=async e=>{e.preventDefault();setAdminLoginStatus('جاري تسجيل الدخول...');const d=new FormData(e.currentTarget),phone=String(d.get('phone')||'').replace(/\D/g,''),password=String(d.get('password')||'');const {error}=await sb.auth.signInWithPassword({email:phoneToEmail(phone),password});if(error){setAdminLoginStatus(error.message,true);return}await refreshSession();if(!isAdmin()){await sb.auth.signOut();session=null;currentProfile=null;setAdminLoginStatus('تم تسجيل الدخول، لكن الحساب ليس مشرفًا.',true);return}setAdminLoginStatus();$('#adminLoginDialog').close();history.replaceState(null,'','/admin');await openAdminPanel(true)};
 $('#adminLogoutBtn').onclick=async()=>{await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();$('#adminDialog').close();history.replaceState(null,'','/admin/login');openAdminLogin('تم تسجيل الخروج من لوحة الإدارة.')};
-$('#adminDialog').addEventListener('close',()=>{if(isAdminPath()&&location.pathname==='/admin')history.replaceState(null,'','/')});
+$('#adminDialog').addEventListener('cancel',e=>e.preventDefault());
 window.addEventListener('popstate',()=>{if(isAdminPath())handleAdminRoute()});
 $('#detailReport').onclick=reportCurrentAd;
 

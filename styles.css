@@ -94,7 +94,44 @@
   <button class="primary wide" type="submit">دخول الإدارة</button>
   <a class="ghost wide admin-home-link" href="/">العودة للموقع</a>
 </form></dialog>
-<dialog id="adminDialog"><section class="panel admin-panel admin-pro"><button type="button" class="close" data-close="adminDialog">×</button><header class="admin-pro-head"><div><span class="admin-eyebrow">ASK JORDAN CONTROL CENTER</span><h3>لوحة القيادة</h3><p class="hint">نظرة مباشرة على حالة المنصة وأهم ما يحتاج تدخلك.</p></div><div class="admin-head-actions"><span id="adminLastUpdated" class="admin-updated">—</span><button id="adminRefreshBtn" type="button" class="ghost">↻ تحديث</button><button id="adminLogoutBtn" type="button" class="ghost">تسجيل الخروج</button><span class="admin-badge">ADMIN</span></div></header><div id="adminAlertStrip" class="admin-alert-strip" hidden></div><div id="adminStats" class="admin-kpi-grid"><div class="admin-skeleton"></div><div class="admin-skeleton"></div><div class="admin-skeleton"></div><div class="admin-skeleton"></div></div><div class="admin-dashboard-grid"><section class="admin-card admin-chart-card"><div class="admin-card-title"><div><h4>نشاط آخر 7 أيام</h4><p>الإعلانات والمستخدمون الجدد</p></div><span>مباشر</span></div><div id="adminActivityChart" class="admin-mini-chart"></div></section><section class="admin-card"><div class="admin-card-title"><div><h4>صحة الذكاء الاصطناعي</h4><p>حالة خدمة OpenAI</p></div></div><div id="adminAIHealth" class="admin-ai-health"><p>جاري الفحص...</p></div></section><section class="admin-card admin-wide"><div class="admin-card-title"><div><h4>آخر النشاطات</h4><p>أحدث العمليات على المنصة</p></div></div><div id="adminLiveActivity" class="admin-live-list"></div></section><section class="admin-card"><div class="admin-card-title"><div><h4>توزيع المحافظات</h4><p>حسب الإعلانات الحالية</p></div></div><div id="adminGovernorates" class="admin-ranking"></div></section><section class="admin-card"><div class="admin-card-title"><div><h4>إجراءات سريعة</h4><p>وصول مباشر للمهام اليومية</p></div></div><div class="admin-quick-actions"><button type="button" data-admin-jump="reports">🚨 مراجعة البلاغات</button><button type="button" data-admin-jump="ads">📢 إدارة الإعلانات</button><button type="button" data-admin-jump="promotions">💎 طلبات الترويج</button><button type="button" data-admin-jump="users">👥 المستخدمون</button></div></section></div><section id="adminPromotionsSection" class="admin-section"><h4>طلبات الترويج</h4><div id="adminPromotions" class="admin-list"></div></section><section id="adminReportsSection" class="admin-section"><h4>البلاغات</h4><div id="adminReports" class="admin-list"></div></section><section id="adminAdsSection" class="admin-section"><h4>إدارة الإعلانات والمراجعة الذكية</h4><div id="adminAds" class="admin-list"></div></section><section id="adminUsersSection" class="admin-section"><h4>المستخدمون</h4><div id="adminUsers" class="admin-list"></div></section></section></dialog>
+<dialog id="adminDialog" class="admin-app-dialog"><div class="admin-app-shell">
+  <aside class="admin-sidebar">
+    <a href="/admin" class="admin-brand"><span>JO</span><div><strong>Ask Jordan</strong><small>CONTROL CENTER</small></div></a>
+    <nav class="admin-nav" aria-label="أقسام لوحة الإدارة">
+      <button type="button" class="active" data-admin-jump="dashboard">▦ <span>لوحة القيادة</span></button>
+      <button type="button" data-admin-jump="users">👥 <span>المستخدمون</span></button>
+      <button type="button" data-admin-jump="ads">📢 <span>الإعلانات</span></button>
+      <button type="button" data-admin-jump="reports">🚨 <span>البلاغات</span></button>
+      <button type="button" data-admin-jump="promotions">💎 <span>طلبات الترويج</span></button>
+      <button type="button" data-admin-jump="ai">🤖 <span>مركز الذكاء الاصطناعي</span></button>
+    </nav>
+    <div class="admin-sidebar-bottom">
+      <a href="/" class="admin-back-site">← العودة للموقع</a>
+      <button id="adminLogoutBtn" type="button">تسجيل الخروج</button>
+    </div>
+  </aside>
+  <main class="admin-main">
+    <header class="admin-topbar">
+      <div><span class="admin-eyebrow">ASK JORDAN CONTROL CENTER</span><h1>لوحة القيادة</h1><p>نظرة مباشرة على حالة المنصة وأهم ما يحتاج تدخلك.</p></div>
+      <div class="admin-head-actions"><span id="adminLastUpdated" class="admin-updated">—</span><button id="adminRefreshBtn" type="button" class="ghost">↻ تحديث</button><span class="admin-badge">ADMIN</span></div>
+    </header>
+    <section id="adminDashboardSection" class="admin-page-section">
+      <div id="adminAlertStrip" class="admin-alert-strip" hidden></div>
+      <div id="adminStats" class="admin-kpi-grid"><div class="admin-skeleton"></div><div class="admin-skeleton"></div><div class="admin-skeleton"></div><div class="admin-skeleton"></div></div>
+      <div class="admin-dashboard-grid">
+        <section class="admin-card admin-chart-card"><div class="admin-card-title"><div><h4>نشاط آخر 7 أيام</h4><p>الإعلانات والمستخدمون الجدد</p></div><span>مباشر</span></div><div id="adminActivityChart" class="admin-mini-chart"></div></section>
+        <section id="adminAISection" class="admin-card"><div class="admin-card-title"><div><h4>صحة الذكاء الاصطناعي</h4><p>حالة خدمة OpenAI</p></div></div><div id="adminAIHealth" class="admin-ai-health"><p>جاري الفحص...</p></div></section>
+        <section class="admin-card admin-wide"><div class="admin-card-title"><div><h4>آخر النشاطات</h4><p>أحدث العمليات على المنصة</p></div></div><div id="adminLiveActivity" class="admin-live-list"></div></section>
+        <section class="admin-card"><div class="admin-card-title"><div><h4>توزيع المحافظات</h4><p>حسب الإعلانات الحالية</p></div></div><div id="adminGovernorates" class="admin-ranking"></div></section>
+        <section class="admin-card"><div class="admin-card-title"><div><h4>إجراءات سريعة</h4><p>وصول مباشر للمهام اليومية</p></div></div><div class="admin-quick-actions"><button type="button" data-admin-jump="reports">🚨 مراجعة البلاغات</button><button type="button" data-admin-jump="ads">📢 إدارة الإعلانات</button><button type="button" data-admin-jump="promotions">💎 طلبات الترويج</button><button type="button" data-admin-jump="users">👥 المستخدمون</button></div></section>
+      </div>
+    </section>
+    <section id="adminPromotionsSection" class="admin-section admin-page-section"><h2>طلبات الترويج</h2><div id="adminPromotions" class="admin-list"></div></section>
+    <section id="adminReportsSection" class="admin-section admin-page-section"><h2>البلاغات</h2><div id="adminReports" class="admin-list"></div></section>
+    <section id="adminAdsSection" class="admin-section admin-page-section"><h2>إدارة الإعلانات والمراجعة الذكية</h2><div id="adminAds" class="admin-list"></div></section>
+    <section id="adminUsersSection" class="admin-section admin-page-section"><h2>المستخدمون</h2><div id="adminUsers" class="admin-list"></div></section>
+  </main>
+</div></dialog>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/config.js"></script>
 <script src="/app.js"></script>
