@@ -5,6 +5,7 @@ let session=null,currentProfile=null,authMode='login',ads=[],editingAdId=null,cu
 let favorites=new Set(JSON.parse(localStorage.getItem('askJordanFavorites')||'[]').map(Number));
 let analytics=JSON.parse(localStorage.getItem('askJordanAnalytics')||'{}');
 let buyerFlow={active:false,intent:null,step:null};
+let currentSearch={query:'',intent:null,results:[]};
 let sellerFlow={active:false,step:null,data:{}};
 const phoneToEmail=p=>`${String(p).replace(/\D/g,'')}@users.askjordan.com`;
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -216,6 +217,17 @@ function scoreAd(a,intent){
 }
 function searchAdsFromIntent(intent){return {intent,results:ads.map(a=>({a,score:scoreAd(a,intent)})).filter(x=>x.score>=0).sort((x,y)=>y.score-x.score).map(x=>x.a)}}
 function searchAds(raw){return searchAdsFromIntent(understandQuery(raw))}
+function serializeIntent(intent){return {category:intent?.category||null,gov:intent?.gov||null,minPrice:intent?.minPrice??null,maxPrice:intent?.maxPrice??null,year:intent?.year??null,transmission:intent?.transmission||null,words:Array.isArray(intent?.words)?intent.words:[]}}
+function hydrateIntent(row){const x=row?.intent||{};return {raw:row?.query||'',q:normalizeArabic(row?.query||''),category:x.category||null,gov:x.gov||null,minPrice:x.minPrice??null,maxPrice:x.maxPrice??null,year:x.year??null,transmission:x.transmission||null,words:Array.isArray(x.words)?x.words:[]}}
+async function saveCurrentSearch(){
+  if(!currentSearch.query||!currentSearch.intent){alert('نفّذ بحثًا أولًا.');return}
+  if(!await requireAuth())return;
+  const payload={user_id:session.user.id,query:currentSearch.query,intent:serializeIntent(currentSearch.intent),last_seen_at:new Date().toISOString()};
+  const {error}=await sb.from('saved_searches').insert(payload);
+  if(error){if(error.code==='23505')alert('هذا البحث محفوظ عندك مسبقًا.');else alert(error.message);return}
+  alert('تم حفظ البحث. سنظهر لك الإعلانات الجديدة المطابقة داخل حسابك.');
+}
+function bindSaveSearchButton(){const b=$('#saveSearchBtn');if(b)b.onclick=saveCurrentSearch}
 async function callAskJordanAI(mode,text,extra={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
   try{
@@ -266,7 +278,10 @@ async function runSmartSearch(raw,precomputedIntent=null,aiAlreadyUsed=false){
   }
   const agentSuggestionHtml=agentSuggestion?`<div class="suggestion-row"><button type="button" class="suggestion-chip" data-search-suggestion="${esc(agentSuggestion)}">جرّب اقتراح الذكاء</button></div>`:'';
   reply.innerHTML=agentReply?`${esc(agentReply)}${badge}${agentSuggestionHtml}`:(results.length?`${aiIntro}<br>وجدت ورتبت لك <strong>${results.length}</strong> إعلانًا من الأكثر تطابقًا للأقل.`:`${aiIntro}<br>لكن ما لقيت إعلانًا مطابقًا حاليًا.${agentSuggestionHtml||`<div class="suggestion-row">${suggestionButtons(intent)}</div>`}`);
+  currentSearch={query:raw,intent,results};
   renderAds(results);
+  reply.insertAdjacentHTML('beforeend',`<div class="search-save-row"><button id="saveSearchBtn" type="button" class="save-search-btn">🔔 احفظ البحث ونبّهني</button></div>`);
+  bindSaveSearchButton();
   document.querySelectorAll('[data-search-suggestion]').forEach(b=>b.onclick=()=>{$('#searchInput').value=b.dataset.searchSuggestion;$('#searchForm').requestSubmit()});
 }
 function appendBuyerMessage(text,kind='assistant'){
@@ -423,11 +438,12 @@ $('#detailCall').onclick=()=>trackAdAction(currentDetail.id,'calls');$('#detailW
 async function shareAd(id){trackAdAction(id,'shares');const a=ads.find(x=>Number(x.id)===Number(id));if(!a)return;const text=`${a.title}\n${money(a.price)}\n${a.governorate} - ${a.area}\n${location.origin}`;try{if(navigator.share)await navigator.share({title:a.title,text,url:location.origin});else{await navigator.clipboard.writeText(text);alert('تم نسخ تفاصيل الإعلان')}}catch(e){if(e.name!=='AbortError')alert('تعذر المشاركة')}}
 $('#accountBtn').onclick=async()=>{
   if(!await requireAuth())return;
-  const [{data:p},{data:mine,error}]=await Promise.all([
+  const [{data:p},{data:mine,error},{data:savedSearches,error:savedError}]=await Promise.all([
     sb.from('profiles').select('*').eq('id',session.user.id).single(),
-    sb.from('ads').select('*').eq('user_id',session.user.id).order('created_at',{ascending:false})
+    sb.from('ads').select('*').eq('user_id',session.user.id).order('created_at',{ascending:false}),
+    sb.from('saved_searches').select('*').eq('user_id',session.user.id).order('created_at',{ascending:false})
   ]);
-  if(error){alert(error.message);return}
+  if(error||savedError){alert((error||savedError).message);return}
   $('#identity').textContent=`${p?.name||'مستخدم'} · ${p?.phone||''}`;
   const own=mine||[],activeCount=own.filter(a=>a.status==='active').length;
   const totals=own.reduce((sum,a)=>{const x=adAnalytics(a.id);sum.views+=x.views;sum.whatsapp+=x.whatsapp;sum.calls+=x.calls;sum.shares+=x.shares;return sum},{views:0,whatsapp:0,calls:0,shares:0});
@@ -436,6 +452,10 @@ $('#accountBtn').onclick=async()=>{
   $('#favoriteSummary').textContent=favAds.length?`لديك ${favAds.length} إعلان محفوظ`:'لا توجد إعلانات محفوظة';
   $('#favoriteAds').innerHTML=favAds.length?favAds.map(a=>`<button type="button" class="favorite-account-item" data-favorite-open="${a.id}"><strong>${esc(a.title)}</strong><span>${money(a.price)} · ${esc(a.governorate)}</span></button>`).join(''):'<p class="hint">احفظ أي إعلان من زر القلب وسيظهر هنا.</p>';
   document.querySelectorAll('[data-favorite-open]').forEach(b=>b.onclick=()=>{$('#accountDialog').close();openDetails(Number(b.dataset.favoriteOpen))});
+  const saved=(savedSearches||[]).map(row=>{const intent=hydrateIntent(row),matches=searchAdsFromIntent(intent).results,newMatches=matches.filter(a=>new Date(a.created_at)>new Date(row.last_seen_at||row.created_at));return {...row,intent,matches,newMatches}});
+  $('#savedSearches').innerHTML=saved.length?saved.map(x=>`<div class="saved-search-item"><div><strong>${esc(x.query)}</strong><small>${x.newMatches.length?`🔔 ${x.newMatches.length} إعلان جديد`:`${x.matches.length} نتيجة حالية`}</small></div><div><button type="button" class="ghost" data-run-saved="${x.id}">عرض</button><button type="button" class="danger" data-delete-saved="${x.id}">حذف</button></div></div>`).join(''):'<p class="hint">بعد أي بحث اضغط «احفظ البحث ونبّهني».</p>';
+  document.querySelectorAll('[data-run-saved]').forEach(b=>b.onclick=async()=>{const x=saved.find(v=>Number(v.id)===Number(b.dataset.runSaved));if(!x)return;await sb.from('saved_searches').update({last_seen_at:new Date().toISOString()}).eq('id',x.id).eq('user_id',session.user.id);$('#accountDialog').close();$('#searchInput').value=x.query;runSmartSearch(x.query,x.intent,false);document.querySelector('#conversation')?.scrollIntoView({behavior:'smooth'})});
+  document.querySelectorAll('[data-delete-saved]').forEach(b=>b.onclick=async()=>{if(!confirm('حذف البحث المحفوظ؟'))return;const {error}=await sb.from('saved_searches').delete().eq('id',b.dataset.deleteSaved).eq('user_id',session.user.id);if(error)alert(error.message);else $('#accountBtn').click()});
   $('#myAds').innerHTML=own.length?own.map(a=>{const x=adAnalytics(a.id);return `<div class="my-ad"><div><strong>${esc(a.title)}</strong><br><small>${esc(a.status)} · ${money(a.price)} · 👁 ${x.views} · واتساب ${x.whatsapp}</small></div><div class="my-ad-actions">${a.status==='active'?`<button class="promote-btn" data-promote="${a.id}">روّج إعلانك</button><button class="ghost" data-edit="${a.id}">تعديل</button><button class="danger" data-delete="${a.id}">حذف</button>`:''}</div></div>`}).join(''):'لا توجد إعلانات';
   document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('حذف الإعلان؟'))return;const {error}=await sb.from('ads').update({status:'deleted'}).eq('id',b.dataset.delete).eq('user_id',session.user.id);if(error)alert(error.message);else{$('#accountDialog').close();await loadAds()}});
   document.querySelectorAll('[data-promote]').forEach(b=>b.onclick=()=>{const a=own.find(x=>Number(x.id)===Number(b.dataset.promote));if(a){$('#accountDialog').close();openPromotionDialog(a)}});
