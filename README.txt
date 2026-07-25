@@ -1,16 +1,15 @@
-Ask Jordan v1.8.0 — Growth & Monetization
+Ask Jordan Core v2.0.0 — WOW Homepage
 
-الجديد:
-- عداد زيارات يزيد مع كل فتح للموقع.
-- عدد المستخدمين والإعلانات وعمليات البحث من Supabase.
-- قسم الإعلانات المميزة أعلى الصفحة.
-- طلب ترويج من حساب البائع.
-- باقات: يوم 1 د.أ، أسبوع 5 د.أ، شهر 15 د.أ.
-- إرسال تفاصيل الدفع تلقائيًا إلى واتساب 0776275911.
-- لوحة المشرف لتأكيد الدفع أو رفضه.
-- الإعلان المميز يظهر أول النتائج حتى انتهاء الباقة.
+New in this release:
+- Compact live statistics bar.
+- New ChatGPT-style hero and search experience.
+- Free-ad call to action above the fold.
+- Popular category shortcuts.
+- Live activity section driven by recent real ads.
+- Featured ads remain integrated.
+- Improved responsive mobile layout.
+- Existing Supabase, admin, reports, promotions, favorites, seller pages, and smart search are preserved.
 
-خطوات النشر:
-1) ارفع محتويات هذا المجلد إلى GitHub فوق الملفات الحالية.
-2) شغّل upgrade-v1.8.0.sql مرة واحدة في Supabase SQL Editor.
-3) حدّث الموقع بقوة Ctrl+F5.
+Deployment:
+Upload all files to the root of the GitHub repository and commit.
+No new SQL migration is required if upgrade-v1.7.0.sql and upgrade-v1.8.0.sql were already applied.

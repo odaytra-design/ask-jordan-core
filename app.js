@@ -106,6 +106,13 @@ function setAuthMode(m){authMode=m;const s=m==='signup';$('#authTitle').textCont
 $('#toggleAuth').onclick=()=>setAuthMode(authMode==='login'?'signup':'login');
 $('#authForm').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget),phone=String(d.get('phone')).replace(/\D/g,''),password=String(d.get('password')),email=phoneToEmail(phone);let r;if(authMode==='signup'){r=await sb.auth.signUp({email,password,options:{data:{phone,name:String(d.get('name')||'')}}})}else{r=await sb.auth.signInWithPassword({email,password})}if(r.error){alert(r.error.message);return}await refreshSession();closeDialogs();e.currentTarget.reset();alert(authMode==='signup'?'تم إنشاء الحساب':'تم تسجيل الدخول')};
 async function fetchImages(){const {data,error}=await sb.from('ad_images').select('*').order('sort_order',{ascending:true});if(error){console.warn('Images load:',error.message);return []}return (data||[]).map(normalizeImage)}
+function renderLiveActivity(){
+  const section=$('#liveActivitySection'),box=$('#liveActivity');if(!section||!box)return;
+  const recent=ads.slice(0,6);section.hidden=!recent.length;if(!recent.length)return;
+  const now=Date.now();
+  box.innerHTML=recent.slice(0,3).map((a,i)=>{const mins=Math.max(1,Math.floor((now-new Date(a.created_at||now).getTime())/60000));const label=mins<60?`قبل ${mins} دقيقة`:`اليوم`;return `<button type="button" class="activity-item" data-activity-ad="${a.id}"><span class="activity-icon">${i%2?'🔎':'✨'}</span><span><strong>إعلان جديد: ${esc(a.title)}</strong><small>${esc(a.governorate)} · ${label}</small></span></button>`}).join('');
+  document.querySelectorAll('[data-activity-ad]').forEach(b=>b.onclick=()=>openDetails(Number(b.dataset.activityAd)));
+}
 async function loadAds(){
   $('#status').textContent='جاري تحميل الإعلانات...';
   const [{data:adRows,error:adError},images]=await Promise.all([
@@ -115,7 +122,7 @@ async function loadAds(){
   if(adError){$('#status').textContent=adError.message;return}
   const byAd=new Map();for(const img of images){if(!byAd.has(String(img.ad_id)))byAd.set(String(img.ad_id),[]);byAd.get(String(img.ad_id)).push(img)}
   ads=(adRows||[]).map(a=>({...a,ad_images:byAd.get(String(a.id))||[]})).sort((a,b)=>(isFeatured(b)-isFeatured(a))||new Date(b.created_at)-new Date(a.created_at));
-  renderFeaturedAds();renderAds(ads);loadPublicStats(false)
+  renderFeaturedAds();renderLiveActivity();renderAds(ads);loadPublicStats(false)
 }
 function adImages(a){return [...(a.ad_images||[])].map(normalizeImage).filter(x=>x.image_url).sort((x,y)=>(x.sort_order||0)-(y.sort_order||0))}
 function renderAds(list){
@@ -336,6 +343,7 @@ function bindAdminActions(){
   document.querySelectorAll('[data-promotion-reject]').forEach(b=>b.onclick=async()=>{const {error}=await sb.from('promotion_requests').update({status:'rejected',reviewed_at:new Date().toISOString(),reviewed_by:session.user.id}).eq('id',Number(b.dataset.promotionReject));if(error)alert(error.message);else await openAdminPanel()});
   document.querySelectorAll('[data-report-status]').forEach(b=>b.onclick=async()=>{const {error}=await sb.from('reports').update({status:b.dataset.status,reviewed_at:new Date().toISOString(),reviewed_by:session.user.id}).eq('id',Number(b.dataset.reportStatus));if(error)alert(error.message);else await openAdminPanel()});
 }
+$('#heroAddBtn').onclick=()=>$('#addBtn').click();
 $('#showAllAdsBtn').onclick=()=>document.getElementById('conversation').scrollIntoView({behavior:'smooth'});
 $('#adminBtn').onclick=openAdminPanel;
 $('#detailReport').onclick=reportCurrentAd;

@@ -8,35 +8,57 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><span class="logo">JO</span><div><h1>اسأل الأردن</h1><p>كل السوق في سؤال واحد</p></div></div>
-  <div class="top-actions"><button id="adminBtn" class="ghost" hidden>لوحة المشرف</button><button id="accountBtn" class="ghost">حسابي</button><button id="addBtn" class="primary">+ أضف إعلان</button></div>
+<header class="topbar v2-topbar">
+  <a class="brand" href="#" aria-label="العودة للرئيسية"><span class="logo">JO</span><div><h1>Ask Jordan</h1><p>اسأل... والباقي علينا</p></div></a>
+  <div class="top-actions"><button id="adminBtn" class="ghost" hidden>لوحة المشرف</button><button id="accountBtn" class="ghost">حسابي</button><button id="addBtn" class="primary add-ad-cta">+ أضف إعلان مجانًا</button></div>
 </header>
-<section class="growth-strip" aria-label="إحصاءات المنصة">
+<section class="growth-strip compact-growth" aria-label="إحصاءات المنصة">
   <div><span>👁️</span><strong id="visitCount">0</strong><small>زيارة</small></div>
   <div><span>📦</span><strong id="activeAdCount">0</strong><small>إعلان نشط</small></div>
   <div><span>👥</span><strong id="userCount">0</strong><small>مستخدم</small></div>
   <div><span>🔍</span><strong id="searchCount">0</strong><small>عملية بحث</small></div>
 </section>
-<main class="chat-shell">
-  <section class="welcome">
-    <span class="mini-logo">JO</span>
+<main class="chat-shell v2-shell">
+  <section class="welcome v2-hero">
+    <div class="hero-badge">🇯🇴 السوق الذكي للأردن</div>
     <h2>شو بتدور عليه اليوم؟</h2>
-    <p>اكتب طلبك بطريقتك، والذكاء يرتّب لك النتائج مباشرة.</p><div class="quick-prompts"><button type="button" data-prompt="بدي كامري 2018 أقل من 12000 دينار في عمان">سيارة في إربد</button><button type="button" data-prompt="بدي آيفون أقل من 300 دينار في عمان">آيفون أقل من 300</button><button type="button" data-prompt="شقق للإيجار في الزرقاء">شقق للإيجار</button><button type="button" data-prompt="وظائف في عمان">وظائف في عمان</button></div>
+    <p>اكتب طلبك بطريقتك، وAsk Jordan يرتّب لك أفضل النتائج فورًا.</p>
+    <form id="searchForm" class="composer hero-composer">
+      <input id="searchInput" autocomplete="off" placeholder="مثال: بدي آيفون أقل من 300 دينار في إربد" />
+      <button aria-label="إرسال">➤</button>
+    </form>
+    <div class="quick-prompts"><button type="button" data-prompt="بدي سيارة في إربد">🚗 سيارة في إربد</button><button type="button" data-prompt="بدي آيفون أقل من 300 دينار في عمان">📱 آيفون أقل من 300</button><button type="button" data-prompt="شقق للإيجار في الزرقاء">🏠 شقق للإيجار</button><button type="button" data-prompt="وظائف في عمان">💼 وظائف في عمان</button></div>
+    <button type="button" class="free-ad-cta" id="heroAddBtn"><strong>انشر إعلانك مجانًا</strong><span>يستغرق أقل من دقيقة ←</span></button>
   </section>
+
+  <section class="category-section">
+    <div class="section-heading"><div><span class="eyebrow">تصفّح بسرعة</span><h3>الأقسام الأكثر طلبًا</h3></div></div>
+    <div class="category-grid">
+      <button type="button" data-prompt="سيارات"><span>🚗</span><strong>سيارات</strong></button>
+      <button type="button" data-prompt="عقارات"><span>🏠</span><strong>عقارات</strong></button>
+      <button type="button" data-prompt="موبايلات"><span>📱</span><strong>موبايلات</strong></button>
+      <button type="button" data-prompt="وظائف"><span>💼</span><strong>وظائف</strong></button>
+      <button type="button" data-prompt="أثاث"><span>🛋️</span><strong>أثاث</strong></button>
+      <button type="button" data-prompt="خدمات"><span>🛠️</span><strong>خدمات</strong></button>
+    </div>
+  </section>
+
+  <section id="liveActivitySection" class="live-activity-section" hidden>
+    <div class="section-heading"><div><span class="live-dot"></span><span class="eyebrow">نشاط المنصة</span><h3>شو بصير الآن؟</h3></div></div>
+    <div id="liveActivity" class="live-activity"></div>
+  </section>
+
   <section id="featuredSection" class="featured-section" hidden>
     <div class="section-heading"><div><span class="eyebrow">⭐ عروض مميزة</span><h3>إعلانات تستحق المشاهدة</h3></div><button type="button" id="showAllAdsBtn" class="ghost">عرض الكل</button></div>
     <div id="featuredAds" class="featured-grid"></div>
   </section>
-  <section id="conversation" class="conversation">
+
+  <section id="conversation" class="conversation v2-conversation">
+    <div class="conversation-heading"><div><span class="eyebrow">أحدث السوق</span><h3>آخر الإعلانات</h3></div></div>
     <div class="assistant-bubble">أهلًا فيك 👋 احكيلي شو بدك، مثلاً: <strong>بدي سيارة أقل من 7000 في إربد</strong>.</div><div id="assistantReply" class="assistant-bubble smart-reply" hidden></div>
     <section id="status" class="status"></section>
     <section id="results" class="results-list"></section>
   </section>
-  <form id="searchForm" class="composer">
-    <input id="searchInput" autocomplete="off" placeholder="اكتب سؤالك عن السوق..." />
-    <button aria-label="إرسال">➤</button>
-  </form>
 </main>
 <dialog id="authDialog"><form id="authForm" class="panel"><button type="button" class="close" data-close="authDialog">×</button><h3 id="authTitle">تسجيل الدخول</h3><label>رقم الهاتف<input name="phone" inputmode="numeric" required placeholder="07XXXXXXXX" /></label><label>كلمة المرور<input name="password" type="password" minlength="8" required /></label><label id="nameField" hidden>الاسم<input name="name" /></label><button id="authSubmit" class="primary wide">دخول</button><button id="toggleAuth" type="button" class="ghost wide">إنشاء حساب جديد</button><p class="hint">نستخدم رقمك كهوية تسجيل داخلية ولا يظهر للعامة إلا داخل إعلانك.</p></form></dialog>
 <dialog id="adDialog"><form id="adForm" class="panel"><button type="button" class="close" data-close="adDialog">×</button><h3 id="adDialogTitle">إضافة إعلان</h3><section class="seller-assistant"><div class="seller-assistant-head"><div><strong>مساعد البيع الذكي</strong><p>اكتب الإعلان بطريقتك، وسنملأ النموذج تلقائيًا.</p></div><span>✨</span></div><textarea id="sellerPrompt" rows="3" placeholder="مثال: بدي أبيع آيفون 14 برو 256 جيجا، نظيف جدًا، بـ 450 دينار في إربد الحي الشرقي"></textarea><div class="seller-assistant-actions"><button id="generateAdBtn" type="button" class="primary">تعبئة الإعلان تلقائيًا</button><button id="clearDraftBtn" type="button" class="ghost">مسح المسودة</button></div><p id="sellerAssistantStatus" class="hint"></p></section><label>التصنيف<select name="category" required><option>موبايلات</option><option>سيارات</option><option>عقارات</option><option>وظائف</option><option>أثاث</option><option>أجهزة كهربائية</option><option>خدمات</option><option>متفرقات</option></select></label><label>اسم المنتج<input name="title" required maxlength="100" placeholder="مثال: آيفون 13 برو ماكس" /></label><div class="two"><label>السعر<input name="price" type="number" min="0" step="0.01" placeholder="بالدينار" /></label><label>المحافظة<select name="governorate" required><option>عمان</option><option>إربد</option><option>الزرقاء</option><option>البلقاء</option><option>المفرق</option><option>جرش</option><option>عجلون</option><option>مادبا</option><option>الكرك</option><option>الطفيلة</option><option>معان</option><option>العقبة</option></select></label></div><label>المنطقة<input name="area" required placeholder="الحي أو المدينة" /></label><label>تفاصيل المنتج<textarea name="description" rows="4" required placeholder="اكتب أهم المواصفات والحالة"></textarea></label><label>الصور (حتى 5)<input id="adImagesInput" name="images" type="file" accept="image/*" multiple /></label><div id="imagePreview" class="image-preview"></div><label>رقم الهاتف<input name="phone" inputmode="numeric" required placeholder="07XXXXXXXX" /></label><p class="hint">اترك السعر فارغًا إذا كان قابلًا للتفاوض.</p><p id="adImagesHint" class="hint" hidden>رفع صور جديدة يضيفها إلى الصور الحالية.</p><p id="publishStatus" class="publish-status" hidden></p><button id="adSubmit" class="primary wide">نشر الإعلان</button></form></dialog>
