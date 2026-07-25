@@ -7,6 +7,7 @@ let analytics=JSON.parse(localStorage.getItem('askJordanAnalytics')||'{}');
 let buyerFlow={active:false,intent:null,step:null};
 let currentSearch={query:'',intent:null,results:[]};
 let sellerFlow={active:false,step:null,data:{}};
+let selectedImageFingerprints=[];
 const phoneToEmail=p=>`${String(p).replace(/\D/g,'')}@users.askjordan.com`;
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const money=v=>Number(v)?`${Number(v).toLocaleString('ar-JO')} د.أ`:'السعر عند التواصل';
@@ -54,6 +55,46 @@ function renderImagePreview(files){
   const box=$('#imagePreview');if(!box)return;box.innerHTML='';
   [...files].slice(0,5).forEach(file=>{const url=URL.createObjectURL(file),item=document.createElement('div');item.className='image-preview-item';item.innerHTML=`<img src="${url}" alt="معاينة"><span>${esc(file.name)}</span>`;box.appendChild(item)});
 }
+
+async function fileToVisionDataUrl(file,maxSide=1280,quality=.78){
+  if(!file?.type?.startsWith('image/'))throw new Error('الملف المحدد ليس صورة.');
+  const bitmap=await createImageBitmap(file),scale=Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close?.();
+  return canvas.toDataURL('image/jpeg',quality);
+}
+async function fileFingerprint(file){
+  const head=await file.slice(0,Math.min(file.size,1024*1024)).arrayBuffer();
+  const meta=new TextEncoder().encode(`${file.name}|${file.size}|${file.lastModified}|`),all=new Uint8Array(meta.length+head.byteLength);all.set(meta);all.set(new Uint8Array(head),meta.length);
+  const digest=await crypto.subtle.digest('SHA-256',all);return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+async function detectDuplicateSelectedImages(files){
+  const hashes=await Promise.all([...files].slice(0,5).map(fileFingerprint));selectedImageFingerprints=hashes;
+  const seen=new Set(),duplicates=hashes.filter(h=>seen.has(h)||!seen.add(h));
+  const published=new Set(JSON.parse(localStorage.getItem('askJordanPublishedImageHashes')||'[]'));
+  const reused=hashes.filter(h=>published.has(h));
+  const box=$('#duplicateImageWarning');if(!box)return;
+  const messages=[];if(duplicates.length)messages.push('تم اختيار صورة مكررة أكثر من مرة.');if(reused.length)messages.push('بعض الصور استُخدمت سابقًا في إعلان من هذا الجهاز. تأكد أنك لا تنشر إعلانًا مكررًا.');
+  box.textContent=messages.join(' ');box.hidden=!messages.length;
+}
+function rememberPublishedImageHashes(){
+  if(!selectedImageFingerprints.length)return;const old=new Set(JSON.parse(localStorage.getItem('askJordanPublishedImageHashes')||'[]'));selectedImageFingerprints.forEach(x=>old.add(x));localStorage.setItem('askJordanPublishedImageHashes',JSON.stringify([...old].slice(-200)));
+}
+function marketPriceStats(category,title){
+  const words=normalizeArabic(title).split(/\s+/).filter(x=>x.length>2).slice(0,5);
+  let rows=ads.filter(a=>a.category===category&&Number(a.price)>0);
+  const close=rows.filter(a=>words.some(w=>normalizeArabic(`${a.title} ${a.description||''}`).includes(w)));if(close.length>=2)rows=close;
+  const prices=rows.map(a=>Number(a.price)).filter(Number.isFinite).sort((a,b)=>a-b);if(!prices.length)return null;
+  const avg=prices.reduce((a,b)=>a+b,0)/prices.length;return{count:prices.length,min:prices[0],max:prices.at(-1),avg:Math.round(avg),quick:Math.round(avg*.92)};
+}
+function renderSmartPricing(aiPricing,stats){
+  const box=$('#smartPricingResult');if(!box)return;if(!stats&&!aiPricing?.recommended){box.hidden=true;return}
+  const recommended=aiPricing?.recommended||stats?.avg||null,quick=aiPricing?.quickSale||stats?.quick||null;
+  $('#pricingMin').textContent=stats?money(stats.min):'—';$('#pricingAvg').textContent=stats?money(stats.avg):(recommended?money(recommended):'—');$('#pricingMax').textContent=stats?money(stats.max):'—';$('#pricingQuick').textContent=quick?money(quick):'—';
+  $('#pricingConfidence').textContent=`ثقة ${aiPricing?.confidence||((stats?.count||0)>=5?'متوسطة':'منخفضة')}`;
+  $('#pricingNote').textContent=aiPricing?.note||`المقارنة مبنية على ${stats?.count||0} إعلان مشابه داخل Ask Jordan، وهي تقديرية وليست تقييمًا فنيًا.`;box.hidden=false;
+}
+
 const saveFavorites=()=>localStorage.setItem('askJordanFavorites',JSON.stringify([...favorites]));
 const isFavorite=id=>favorites.has(Number(id));
 const saveAnalytics=()=>localStorage.setItem('askJordanAnalytics',JSON.stringify(analytics));
@@ -443,18 +484,40 @@ function handleSellerWizardAnswer(raw){
   }
   if(sellerFlow.step==='description'){d.description=value;finishSellerWizard()}
 }
-function resetAdForm(){editingAdId=null;if($('#aiAdResult'))$('#aiAdResult').hidden=true;$('#adDialogTitle').textContent='إضافة إعلان';$('#adSubmit').textContent='نشر الإعلان';$('#adImagesHint').hidden=true;$('#publishStatus').hidden=true;$('#adForm').reset();$('#imagePreview').innerHTML='';$('#sellerAssistantStatus').textContent='';restoreAdDraft();resetSellerWizard()}
+function resetAdForm(){editingAdId=null;selectedImageFingerprints=[];if($('#smartPricingResult'))$('#smartPricingResult').hidden=true;if($('#duplicateImageWarning'))$('#duplicateImageWarning').hidden=true;if($('#visionStatus'))$('#visionStatus').textContent='';if($('#aiAdResult'))$('#aiAdResult').hidden=true;if($('#moderationResult'))$('#moderationResult').hidden=true;$('#adDialogTitle').textContent='إضافة إعلان';$('#adSubmit').textContent='نشر الإعلان';$('#adImagesHint').hidden=true;$('#publishStatus').hidden=true;$('#adForm').reset();$('#imagePreview').innerHTML='';$('#sellerAssistantStatus').textContent='';restoreAdDraft();resetSellerWizard()}
 function renderAIAdResult(r={}){const box=$('#aiAdResult');if(!box)return;const score=Math.max(0,Math.min(100,Number(r.qualityScore)||0));$('#aiQualityScore').textContent=`${score}/100`;$('#aiQualityBar').style.width=`${score}%`;const meta=[r.brand&&`الماركة: ${r.brand}`,r.model&&`الموديل: ${r.model}`,r.condition&&`الحالة: ${r.condition}`].filter(Boolean);$('#aiExtractedMeta').innerHTML=meta.map(x=>`<span>${esc(x)}</span>`).join('');$('#aiTags').innerHTML=(r.tags||[]).map(x=>`<span>#${esc(x)}</span>`).join('');$('#aiQualityTips').innerHTML=(r.qualityTips||[]).map(x=>`<li>${esc(x)}</li>`).join('');box.hidden=false}
 $('#generateAdBtn').onclick=async()=>{const text=$('#sellerPrompt').value.trim(),status=$('#sellerAssistantStatus'),btn=$('#generateAdBtn');if(!text){status.textContent='اكتب وصفًا سريعًا للإعلان أولًا.';return}btn.disabled=true;btn.textContent='جاري التحليل...';status.textContent='جاري إنشاء مسودة الإعلان وتحليل جودتها...';$('#aiAdResult').hidden=true;try{let r;try{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);const res=await fetch('/api/ai/generate-ad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal});clearTimeout(timer);const payload=await res.json().catch(()=>({}));if(!res.ok||!payload.ok)throw new Error(payload.error||`AI HTTP ${res.status}`);r=payload.data;console.info('Ask Jordan AI Seller Assistant active',r)}catch(error){console.warn('AI ad fallback:',error.message);r={...buildSmartAd(text),qualityScore:55,qualityTips:['أضف تفاصيل أكثر عن الحالة','أضف الماركة أو الموديل إن وجد','أرفق صورًا واضحة'],tags:[]};status.textContent='تمت التعبئة بالنظام المحلي لأن خدمة الذكاء غير متاحة مؤقتًا.'}const e=$('#adForm').elements;e.title.value=r.title||'';if(r.category&&[...e.category.options].some(o=>o.value===r.category))e.category.value=r.category;if(r.price!==null&&r.price!==undefined)e.price.value=r.price;if(r.governorate&&[...e.governorate.options].some(o=>o.value===r.governorate))e.governorate.value=r.governorate;if(r.area)e.area.value=r.area;e.description.value=r.description||text;renderAIAdResult(r);if(!status.textContent.includes('النظام المحلي'))status.textContent='تم إنشاء المسودة بالذكاء الاصطناعي. راجع البيانات قبل النشر.';saveAdDraft()}catch(error){status.textContent=error.message||'تعذر تجهيز الإعلان.'}finally{btn.disabled=false;btn.textContent='تعبئة الإعلان تلقائيًا'}};
 $('#clearDraftBtn').onclick=()=>{clearAdDraft();$('#adForm').reset();$('#sellerAssistantStatus').textContent='تم مسح المسودة.'};
 $('#sellerWizardSend').onclick=()=>handleSellerWizardAnswer($('#sellerWizardInput').value);
 $('#sellerWizardInput').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();handleSellerWizardAnswer(e.currentTarget.value)}};
-$('#adImagesInput').addEventListener('change',e=>renderImagePreview(e.target.files));
+$('#adImagesInput').addEventListener('change',async e=>{renderImagePreview(e.target.files);try{await detectDuplicateSelectedImages(e.target.files)}catch(error){console.warn('Image fingerprint:',error)}});
+$('#analyzeImagesBtn').onclick=async()=>{
+  const input=$('#adImagesInput'),files=[...input.files].slice(0,3),btn=$('#analyzeImagesBtn'),status=$('#visionStatus');
+  if(!files.length){status.textContent='اختر صورة واحدة على الأقل أولًا.';return}
+  btn.disabled=true;btn.textContent='جاري تحليل الصور...';status.textContent='يتم الآن فهم المنتج وجودة الصور ومقارنة السعر...';
+  try{
+    const images=[];for(const file of files)images.push(await fileToVisionDataUrl(file));
+    const e=$('#adForm').elements,text=$('#sellerPrompt').value.trim()||`${e.title.value||''} ${e.description.value||''}`.trim();
+    const market=ads.filter(a=>Number(a.price)>0).slice(0,40).map(a=>({id:a.id,title:a.title,category:a.category,price:a.price,governorate:a.governorate,description:a.description}));
+    const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'vision',text,images,market})});
+    const payload=await res.json().catch(()=>({}));if(!res.ok||!payload.ok)throw new Error(payload.error||`AI HTTP ${res.status}`);const r=payload.data;
+    if(r.title&&!e.title.value)e.title.value=r.title;if(r.category&&[...e.category.options].some(o=>o.value===r.category))e.category.value=r.category;if(r.description&&!e.description.value)e.description.value=r.description;
+    renderAIAdResult({...r,qualityTips:[...(r.qualityTips||[]),r.imageQualityScore?`جودة الصور: ${r.imageQualityScore}/100`:null].filter(Boolean)});
+    const meta=$('#aiExtractedMeta'),extra=[r.color&&`اللون: ${r.color}`,r.detectedMultipleProducts&&'تنبيه: يظهر أكثر من منتج في الصور'].filter(Boolean);meta.innerHTML+=extra.map(x=>`<span>${esc(x)}</span>`).join('');
+    const stats=marketPriceStats(r.category||e.category.value,r.title||e.title.value);renderSmartPricing(r.pricing,stats);
+    status.textContent=r.detectedMultipleProducts?'تم التحليل، لكن يظهر أكثر من منتج. يفضّل تخصيص إعلان لكل منتج.':'تم تحليل الصور وتعبئة البيانات المتاحة. راجعها قبل النشر.';saveAdDraft();
+  }catch(error){console.error('Vision analysis:',error);status.textContent=error.message||'تعذر تحليل الصور.'}
+  finally{btn.disabled=false;btn.textContent='📷 تحليل الصور بالذكاء الاصطناعي'}
+};
 $('#adForm').addEventListener('input',()=>{clearTimeout(window.__draftTimer);window.__draftTimer=setTimeout(saveAdDraft,350)});
 $('#addBtn').onclick=async()=>{if(!await requireAuth())return;resetAdForm();const {data:p}=await sb.from('profiles').select('phone').eq('id',session.user.id).single();$('#adForm').elements.phone.value=p?.phone||'';$('#adDialog').showModal()};
 async function insertImageRow(row){let r=await sb.from('ad_images').insert({...row,image_url:row.image_url});if(!r.error)return r; if(/image_url/i.test(r.error.message||'')){const {image_url,...rest}=row;return await sb.from('ad_images').insert({...rest,url:image_url})}return r}
 async function uploadImages(adId,files){let uploaded=0;for(let i=0;i<files.length;i++){const f=files[i];if(f.size>5*1024*1024)throw new Error(`الصورة ${f.name} أكبر من 5MB`);const ext=(f.name.split('.').pop()||'jpg').toLowerCase(),path=`${session.user.id}/${adId}/${crypto.randomUUID()}.${ext}`;const up=await sb.storage.from('ad-images').upload(path,f,{cacheControl:'3600',upsert:false});if(up.error)throw up.error;const {data:urlData}=sb.storage.from('ad-images').getPublicUrl(path);const imageRow={ad_id:adId,image_url:urlData.publicUrl,sort_order:i};const saved=await insertImageRow(imageRow);if(saved.error)throw saved.error;uploaded++}return uploaded}
-async function verifyAd(adId){const {data,error}=await sb.from('ads').select('*').eq('id',adId).eq('status','active').single();if(error||!data)throw new Error('تم إرسال الطلب لكن لم يتم تأكيد حفظ الإعلان. حاول مرة أخرى.');return data}
+async function verifyAd(adId){const {data,error}=await sb.from('ads').select('*').eq('id',adId).in('status',['active','under_review']).single();if(error||!data)throw new Error('تم إرسال الطلب لكن لم يتم تأكيد حفظ الإعلان. حاول مرة أخرى.');return data}
+function normalizeWords(v){return String(v||'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().split(/\s+/).filter(x=>x.length>2)}
+function localModeration(ad,candidates=[]){const text=`${ad.title} ${ad.description}`.toLowerCase();let risk=0,reasons=[];const risky=[['عربون',24],['تحويل مسبق',28],['حوّل',16],['واتساب فقط',9],['فرصة لا تتكرر',8],['مضمون 100',12],['بدون فحص',10]];for(const [w,n] of risky)if(text.includes(w)){risk+=n;reasons.push(`يحتوي النص على عبارة تحتاج تحقق: ${w}`)}const aw=new Set(normalizeWords(`${ad.title} ${ad.description}`));let best={score:0,id:null,reason:''};for(const c of candidates){if(editingAdId&&Number(c.id)===Number(editingAdId))continue;const cw=new Set(normalizeWords(`${c.title} ${c.description}`));const common=[...aw].filter(x=>cw.has(x)).length;const union=new Set([...aw,...cw]).size||1;let score=Math.round(common/union*100);if(ad.phone&&c.phone===ad.phone)score+=18;if(ad.category===c.category)score+=7;if(ad.governorate===c.governorate&&ad.area===c.area)score+=7;if(ad.price&&c.price&&Math.abs(ad.price-c.price)/Math.max(ad.price,c.price)<.05)score+=8;score=Math.min(100,score);if(score>best.score)best={score,id:c.id,reason:'تشابه في النص والبيانات الأساسية'}}if(best.score>=78){risk=Math.max(risk,48);reasons.push('يوجد إعلان مشابه بدرجة مرتفعة.')}risk=Math.min(100,risk);return{riskScore:risk,trustScore:100-risk,riskLevel:risk>=70?'مرتفع':risk>=35?'متوسط':'منخفض',action:risk>=80?'block':risk>=45?'review':'allow',reasons:reasons.slice(0,4),duplicate:{isDuplicate:best.score>=78,score:best.score,adId:best.score>=78?best.id:null,reason:best.score>=78?best.reason:''}}}
+function renderModerationResult(r){const box=$('#moderationResult');if(!box)return;box.hidden=false;box.className=`moderation-result ${r.action==='allow'?'safe':r.action==='review'?'review':'blocked'}`;$('#trustScoreBadge').textContent=`الثقة ${Number(r.trustScore||0)}/100`;$('#moderationSummary').textContent=r.action==='allow'?'الفحص جيد ويمكن نشر الإعلان.':r.action==='review'?'سيتم إرسال الإعلان للمراجعة قبل ظهوره للعامة.':'تعذر نشر الإعلان تلقائيًا بسبب مؤشرات خطورة مرتفعة.';$('#moderationReasons').innerHTML=(r.reasons||[]).map(x=>`<li>${esc(x)}</li>`).join('');const dup=$('#duplicateAdNotice');if(r.duplicate?.isDuplicate){dup.hidden=false;dup.innerHTML=`إعلان مشابه بنسبة <strong>${Number(r.duplicate.score||0)}%</strong>${r.duplicate.adId?` — رقم الإعلان ${esc(r.duplicate.adId)}`:''}. يفضّل تحديث إعلانك السابق بدل التكرار.`}else dup.hidden=true}
+async function moderateAdBeforePublish(ad){const candidates=ads.slice(0,80).map(x=>({id:x.id,user_id:x.user_id,title:x.title,category:x.category,price:x.price,governorate:x.governorate,area:x.area,description:x.description,phone:x.phone}));try{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'moderate',text:`${ad.title} ${ad.description}`,ad,candidates}),signal:controller.signal});clearTimeout(timer);const payload=await res.json().catch(()=>({}));if(!res.ok||!payload.ok)throw new Error(payload.error||`AI HTTP ${res.status}`);return payload.data}catch(error){console.warn('Moderation fallback:',error.message);return localModeration(ad,candidates)}}
 $('#adForm').onsubmit=async e=>{
   e.preventDefault();if(isPublishing)return;if(!await requireAuth())return;
   const form=e.currentTarget,btn=$('#adSubmit'),status=$('#publishStatus');
@@ -463,12 +526,13 @@ $('#adForm').onsubmit=async e=>{
   try{
     const d=new FormData(form);const payload={user_id:session.user.id,title:String(d.get('title')).trim(),category:String(d.get('category')),price:Number(d.get('price'))||0,governorate:String(d.get('governorate')),area:String(d.get('area')).trim(),description:String(d.get('description')).trim(),phone:String(d.get('phone')).trim(),status:'active'};
     if(!payload.title||!payload.category||!payload.governorate||!payload.area||!payload.description||!payload.phone)throw new Error('أكمل جميع الحقول المطلوبة.');
+    showStatus('جاري فحص الأمان والتكرار...');const moderation=await moderateAdBeforePublish(payload);renderModerationResult(moderation);
+    if(moderation.action==='block')throw new Error('تعذر النشر: عدّل الإعلان وأزل مؤشرات الخطورة الموضحة ثم حاول مجددًا.');
+    Object.assign(payload,{trust_score:moderation.trustScore,risk_score:moderation.riskScore,moderation_status:moderation.action==='review'?'pending':'approved',moderation_reasons:moderation.reasons||[],duplicate_of:moderation.duplicate?.adId||null,duplicate_score:moderation.duplicate?.score||0,status:moderation.action==='review'?'under_review':'active'});
     let r;if(editingAdId)r=await sb.from('ads').update(payload).eq('id',editingAdId).eq('user_id',session.user.id).select('*').single();else r=await sb.from('ads').insert(payload).select('*').single();
     if(r.error)throw r.error;const ad=r.data;if(!ad?.id)throw new Error('لم يرجع رقم الإعلان من قاعدة البيانات.');
     const files=[...form.elements.images.files].slice(0,5);if(files.length){showStatus('تم حفظ الإعلان، جاري رفع الصور...');await uploadImages(ad.id,files)}
-    await verifyAd(ad.id);showStatus('تم نشر الإعلان وظهر في السوق.','success');await loadAds();
-    const published=ads.find(x=>Number(x.id)===Number(ad.id));if(!published)throw new Error('تم حفظ الإعلان لكن لم يظهر في النتائج بعد. حدّث الصفحة.');
-    setTimeout(()=>{form.reset();clearAdDraft();$('#adDialog').close();editingAdId=null;status.hidden=true;openDetails(ad.id)},500);
+    await verifyAd(ad.id);rememberPublishedImageHashes();if(payload.status==='under_review'){showStatus('تم حفظ الإعلان وإرساله للمراجعة. سيظهر بعد الموافقة.','success');setTimeout(()=>{form.reset();clearAdDraft();$('#adDialog').close();editingAdId=null;status.hidden=true;openAccount()},900)}else{showStatus('تم نشر الإعلان وظهر في السوق.','success');await loadAds();const published=ads.find(x=>Number(x.id)===Number(ad.id));if(!published)throw new Error('تم حفظ الإعلان لكن لم يظهر في النتائج بعد. حدّث الصفحة.');setTimeout(()=>{form.reset();clearAdDraft();$('#adDialog').close();editingAdId=null;status.hidden=true;openDetails(ad.id)},500)}
   }catch(error){console.error('Publish error:',error);showStatus(error?.message||'تعذر نشر الإعلان.','error')}
   finally{isPublishing=false;btn.disabled=false;btn.textContent=editingAdId?'حفظ التعديل':'نشر الإعلان'}
 };

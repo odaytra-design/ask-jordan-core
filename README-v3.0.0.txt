@@ -1,13 +1,14 @@
-Ask Jordan Core v2.8.0 — Internal Chat
+Ask Jordan Core v3.0.0 — AI Marketplace Assistant
 
-1) Execute upgrade-v2.8.0.sql once in Supabase SQL Editor.
-2) Deploy the whole folder to Cloudflare Pages/Workers as usual.
-3) Test with two different accounts: open an ad, click "مراسلة البائع", send and read messages.
+الجديد:
+- متابعة الحوار اعتمادًا على نتائج البحث الحالية.
+- مقارنة ذكية لأفضل 3 إعلانات دون اختراع معلومات.
+- أوامر طبيعية: قارن، الأرخص، الأحدث، وسّع البحث.
+- أزرار إجراءات ذكية أسفل كل نتيجة بحث.
+- fallback محلي عند تعطل خدمة OpenAI.
 
-Included:
-- Conversations linked to ads
-- Inbox and chat dialog
-- Realtime message refresh through Supabase Realtime
-- Unread badge
-- Sent/read status
-- RLS policies for participants only
+الترقية:
+- لا يوجد ملف SQL جديد لهذا الإصدار.
+- ارفع المشروع كاملًا إلى Cloudflare Workers.
+- تأكد من وجود OPENAI_API_KEY في Secrets لتفعيل المقارنة الذكية.
+- نفّذ تحديثًا قويًا للمتصفح Ctrl+F5.

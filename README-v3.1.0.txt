@@ -1,15 +1,14 @@
-Ask Jordan v2.9.0 — In-App Notifications
+Ask Jordan Core v3.1.0 — AI Seller Assistant B.5.1
 
-المضاف:
-- زر جرس إشعارات مع عداد غير المقروء.
-- إشعار فوري عند وصول رسالة جديدة.
-- إشعار عند نزول إعلان يطابق بحثًا محفوظًا.
-- قائمة إشعارات وفتح الإعلان أو المحادثة مباشرة.
-- تحديد جميع الإشعارات كمقروءة.
-- تحديث لحظي عبر Supabase Realtime.
+الجديد:
+- نقطة API جديدة: POST /api/ai/generate-ad
+- تحويل وصف قصير إلى عنوان ووصف وتصنيف وسعر وموقع
+- استخراج الماركة والموديل والحالة عند ذكرها فقط
+- وسوم تلقائية
+- Quality Score من 100 مع نصائح تحسين
+- Fallback محلي عند تعطل OpenAI
 
-الترقية:
-1) تأكد من تشغيل upgrade-v2.7.0.sql
-2) تأكد من تشغيل upgrade-v2.8.0.sql
-3) شغّل upgrade-v2.9.0.sql داخل Supabase SQL Editor
-4) ارفع المشروع على Cloudflare Workers/Pages
+التشغيل:
+1) ارفع المشروع على Cloudflare Workers/Pages.
+2) أضف OPENAI_API_KEY كـ Secret.
+3) لا يوجد SQL جديد لهذا الإصدار.
