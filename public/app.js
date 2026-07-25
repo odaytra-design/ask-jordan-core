@@ -1,7 +1,7 @@
 const cfg=window.ASK_JORDAN_CONFIG;
 const sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
 const $=s=>document.querySelector(s);
-let session=null,currentProfile=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false;
+let session=null,currentProfile=null,authMode='login',ads=[],editingAdId=null,currentDetail=null,currentImageIndex=0,isPublishing=false,currentConversationId=null,messageChannel=null;
 let favorites=new Set(JSON.parse(localStorage.getItem('askJordanFavorites')||'[]').map(Number));
 let analytics=JSON.parse(localStorage.getItem('askJordanAnalytics')||'{}');
 let buyerFlow={active:false,intent:null,step:null};
@@ -107,7 +107,7 @@ async function requireAuth(){await refreshSession();if(!session){setAuthMode('lo
 async function requireAdmin(){await refreshSession();if(!session){setAuthMode('login');$('#authDialog').showModal();return false}if(!isAdmin()){alert('هذه الصفحة مخصصة للمشرف فقط.');return false}return true}
 function setAuthMode(m){authMode=m;const s=m==='signup';$('#authTitle').textContent=s?'إنشاء حساب':'تسجيل الدخول';$('#authSubmit').textContent=s?'إنشاء الحساب':'دخول';$('#toggleAuth').textContent=s?'لدي حساب':'إنشاء حساب جديد';$('#nameField').hidden=!s}
 $('#toggleAuth').onclick=()=>setAuthMode(authMode==='login'?'signup':'login');
-$('#authForm').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget),phone=String(d.get('phone')).replace(/\D/g,''),password=String(d.get('password')),email=phoneToEmail(phone);let r;if(authMode==='signup'){r=await sb.auth.signUp({email,password,options:{data:{phone,name:String(d.get('name')||'')}}})}else{r=await sb.auth.signInWithPassword({email,password})}if(r.error){alert(r.error.message);return}await refreshSession();closeDialogs();e.currentTarget.reset();alert(authMode==='signup'?'تم إنشاء الحساب':'تم تسجيل الدخول')};
+$('#authForm').onsubmit=async e=>{e.preventDefault();const d=new FormData(e.currentTarget),phone=String(d.get('phone')).replace(/\D/g,''),password=String(d.get('password')),email=phoneToEmail(phone);let r;if(authMode==='signup'){r=await sb.auth.signUp({email,password,options:{data:{phone,name:String(d.get('name')||'')}}})}else{r=await sb.auth.signInWithPassword({email,password})}if(r.error){alert(r.error.message);return}await refreshSession();updateUnreadBadge();closeDialogs();e.currentTarget.reset();alert(authMode==='signup'?'تم إنشاء الحساب':'تم تسجيل الدخول')};
 async function fetchImages(){const {data,error}=await sb.from('ad_images').select('*').order('sort_order',{ascending:true});if(error){console.warn('Images load:',error.message);return []}return (data||[]).map(normalizeImage)}
 let liveActivityOffset=0,liveActivityTimer=null;
 function renderLiveActivity(){
@@ -430,11 +430,62 @@ async function openSellerProfile(userId){
   document.querySelectorAll('[data-seller-ad]').forEach(b=>b.onclick=()=>{dialog.close();openDetails(Number(b.dataset.sellerAd))});
 }
 
+
+function shortTime(value){if(!value)return '';const d=new Date(value),now=new Date(),same=d.toDateString()===now.toDateString();return same?d.toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('ar-JO',{month:'short',day:'numeric'})}
+async function updateUnreadBadge(){
+  const badge=$('#messageBadge');if(!badge)return;
+  if(!session){badge.hidden=true;return}
+  const {count,error}=await sb.from('messages').select('id',{count:'exact',head:true}).neq('sender_id',session.user.id).is('read_at',null);
+  if(error){console.warn('Unread messages:',error.message);badge.hidden=true;return}
+  badge.textContent=Number(count||0)>99?'99+':String(count||0);badge.hidden=!count;
+}
+async function getConversationRows(){
+  const {data,error}=await sb.from('conversations').select('*').order('last_message_at',{ascending:false});
+  if(error)throw error;return data||[];
+}
+async function renderConversationList(openId=null){
+  const box=$('#conversationList');box.innerHTML='<p class="hint">جاري تحميل المحادثات...</p>';
+  const rows=await getConversationRows();
+  if(!rows.length){box.innerHTML='<p class="hint">لا توجد محادثات بعد. افتح إعلانًا واضغط «مراسلة البائع».</p>';return}
+  const userIds=[...new Set(rows.flatMap(r=>[r.buyer_id,r.seller_id]).filter(Boolean))];
+  const {data:profiles}=await sb.from('profiles').select('id,name').in('id',userIds);
+  const names=new Map((profiles||[]).map(p=>[p.id,p.name||'مستخدم Ask Jordan']));
+  const ids=rows.map(r=>r.id);const {data:lastMsgs}=await sb.from('messages').select('conversation_id,body,created_at,sender_id,read_at').in('conversation_id',ids).order('created_at',{ascending:false});
+  const latest=new Map();for(const m of lastMsgs||[])if(!latest.has(m.conversation_id))latest.set(m.conversation_id,m);
+  box.innerHTML=rows.map(r=>{const other=r.buyer_id===session.user.id?r.seller_id:r.buyer_id,a=ads.find(x=>Number(x.id)===Number(r.ad_id)),m=latest.get(r.id),active=Number(r.id)===Number(currentConversationId);return `<button type="button" class="conversation-item ${active?'active':''}" data-conversation="${r.id}"><strong>${esc(names.get(other)||'مستخدم Ask Jordan')}</strong><span>${esc(a?.title||'إعلان')}</span><small>${esc(m?.body||'ابدأ المحادثة')}${m?.created_at?` · ${shortTime(m.created_at)}`:''}</small></button>`}).join('');
+  document.querySelectorAll('[data-conversation]').forEach(b=>b.onclick=()=>openConversation(Number(b.dataset.conversation)));
+  if(openId)await openConversation(openId);else if(!currentConversationId&&rows[0])await openConversation(rows[0].id);
+}
+async function openConversation(id){
+  currentConversationId=Number(id);$('#chatEmpty').hidden=true;$('#chatActive').hidden=false;
+  const {data:conv,error}=await sb.from('conversations').select('*').eq('id',id).single();if(error){alert(error.message);return}
+  const other=conv.buyer_id===session.user.id?conv.seller_id:conv.buyer_id;
+  const [{data:profile},{data:messages,error:msgError}]=await Promise.all([sb.from('profiles').select('name').eq('id',other).maybeSingle(),sb.from('messages').select('*').eq('conversation_id',id).order('created_at',{ascending:true})]);
+  if(msgError){alert(msgError.message);return}
+  const ad=ads.find(x=>Number(x.id)===Number(conv.ad_id));$('#chatHeader').innerHTML=`<strong>${esc(profile?.name||'مستخدم Ask Jordan')}</strong><span>${esc(ad?.title||'الإعلان')}</span>`;
+  $('#chatMessages').innerHTML=(messages||[]).length?(messages||[]).map(m=>`<div class="chat-message ${m.sender_id===session.user.id?'mine':'theirs'}"><p>${esc(m.body)}</p><small>${shortTime(m.created_at)}${m.sender_id===session.user.id?(m.read_at?' · تمت القراءة':' · تم الإرسال'):''}</small></div>`).join(''):'<p class="hint">ابدأ المحادثة برسالة ترحيب.</p>';
+  $('#chatMessages').scrollTop=$('#chatMessages').scrollHeight;
+  await sb.from('messages').update({read_at:new Date().toISOString()}).eq('conversation_id',id).neq('sender_id',session.user.id).is('read_at',null);
+  document.querySelectorAll('[data-conversation]').forEach(b=>b.classList.toggle('active',Number(b.dataset.conversation)===Number(id)));
+  subscribeMessages(id);updateUnreadBadge();
+}
+function subscribeMessages(id){
+  if(messageChannel)sb.removeChannel(messageChannel);
+  messageChannel=sb.channel(`conversation-${id}`).on('postgres_changes',{event:'*',schema:'public',table:'messages',filter:`conversation_id=eq.${id}`},()=>openConversation(id)).subscribe();
+}
+async function startConversation(ad){
+  if(!await requireAuth())return;if(ad.user_id===session.user.id){alert('هذا إعلانك، لا يمكنك مراسلة نفسك.');return}
+  const {data,error}=await sb.rpc('get_or_create_conversation',{p_ad_id:Number(ad.id)});if(error){alert(error.message);return}
+  $('#detailsDialog').close();$('#messagesDialog').showModal();await renderConversationList(Number(data));
+}
+$('#messagesBtn').onclick=async()=>{if(!await requireAuth())return;$('#messagesDialog').showModal();await renderConversationList()};
+$('#chatForm').onsubmit=async e=>{e.preventDefault();if(!currentConversationId)return;const input=$('#chatInput'),body=input.value.trim();if(!body)return;input.value='';const {error}=await sb.from('messages').insert({conversation_id:currentConversationId,sender_id:session.user.id,body});if(error){alert(error.message);input.value=body;return}await sb.from('conversations').update({last_message_at:new Date().toISOString()}).eq('id',currentConversationId);await openConversation(currentConversationId)};
+
 function openDetails(id){const a=ads.find(x=>Number(x.id)===Number(id));if(!a)return;currentDetail=a;currentImageIndex=0;trackAdAction(a.id,'views');renderDetail();history.replaceState(null,'',`#ad-${a.id}`);$('#detailsDialog').showModal()}
 function renderDetail(){const a=currentDetail,imgs=adImages(a);$('#detailTitle').textContent=a.title;$('#detailPrice').textContent=money(a.price);const stats=adAnalytics(a.id);$('#detailMeta').textContent=`${a.category} · ${a.governorate} · ${a.area} · 👁 ${stats.views}`;$('#detailDescription').textContent=a.description;$('#detailCall').href=`tel:${a.phone}`;$('#detailWhatsapp').href=waLink(a.phone);$('#detailCounter').textContent=imgs.length?`${currentImageIndex+1} / ${imgs.length}`:'';$('#detailImage').src=imgs[currentImageIndex]?.image_url||'';$('#detailImage').hidden=!imgs.length;$('#detailPlaceholder').hidden=!!imgs.length;$('#prevImage').hidden=imgs.length<2;$('#nextImage').hidden=imgs.length<2;document.title=`${a.title} | Ask Jordan`;const related=ads.filter(x=>x.id!==a.id&&(x.category===a.category||x.governorate===a.governorate)).slice(0,4);$('#relatedAds').innerHTML=related.length?related.map(x=>`<button type="button" data-related="${x.id}"><strong>${esc(x.title)}</strong><span>${money(x.price)} · ${esc(x.governorate)}</span></button>`).join(''):'<p>لا توجد إعلانات مشابهة حاليًا.</p>';document.querySelectorAll('[data-related]').forEach(b=>b.onclick=()=>openDetails(Number(b.dataset.related)));updateDetailFavorite()}
 $('#prevImage').onclick=()=>{const n=adImages(currentDetail).length;if(!n)return;currentImageIndex=(currentImageIndex-1+n)%n;renderDetail()};
 $('#nextImage').onclick=()=>{const n=adImages(currentDetail).length;if(!n)return;currentImageIndex=(currentImageIndex+1)%n;renderDetail()};
-$('#detailCall').onclick=()=>trackAdAction(currentDetail.id,'calls');$('#detailWhatsapp').onclick=()=>trackAdAction(currentDetail.id,'whatsapp');$('#detailShare').onclick=()=>shareAd(currentDetail.id);$('#detailFavorite').onclick=()=>toggleFavorite(currentDetail.id);$('#detailSeller').onclick=()=>openSellerProfile(currentDetail.user_id);$('#detailsDialog').addEventListener('close',()=>{if(location.hash.startsWith('#ad-'))history.replaceState(null,'',location.pathname+location.search);document.title='Ask Jordan | اسأل السوق الأردني'});
+$('#detailMessage').onclick=()=>startConversation(currentDetail);$('#detailCall').onclick=()=>trackAdAction(currentDetail.id,'calls');$('#detailWhatsapp').onclick=()=>trackAdAction(currentDetail.id,'whatsapp');$('#detailShare').onclick=()=>shareAd(currentDetail.id);$('#detailFavorite').onclick=()=>toggleFavorite(currentDetail.id);$('#detailSeller').onclick=()=>openSellerProfile(currentDetail.user_id);$('#detailsDialog').addEventListener('close',()=>{if(location.hash.startsWith('#ad-'))history.replaceState(null,'',location.pathname+location.search);document.title='Ask Jordan | اسأل السوق الأردني'});
 async function shareAd(id){trackAdAction(id,'shares');const a=ads.find(x=>Number(x.id)===Number(id));if(!a)return;const text=`${a.title}\n${money(a.price)}\n${a.governorate} - ${a.area}\n${location.origin}`;try{if(navigator.share)await navigator.share({title:a.title,text,url:location.origin});else{await navigator.clipboard.writeText(text);alert('تم نسخ تفاصيل الإعلان')}}catch(e){if(e.name!=='AbortError')alert('تعذر المشاركة')}}
 $('#accountBtn').onclick=async()=>{
   if(!await requireAuth())return;
@@ -516,5 +567,5 @@ $('#showAllAdsBtn').onclick=()=>document.getElementById('conversation').scrollIn
 $('#adminBtn').onclick=openAdminPanel;
 $('#detailReport').onclick=reportCurrentAd;
 
-$('#logoutBtn').onclick=async()=>{await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();closeDialogs();alert('تم تسجيل الخروج')};
-(async()=>{await loadPublicStats(true);await refreshSession();await loadAds();const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();
+$('#logoutBtn').onclick=async()=>{if(messageChannel)sb.removeChannel(messageChannel);await sb.auth.signOut();session=null;currentProfile=null;updateAdminButton();updateUnreadBadge();closeDialogs();alert('تم تسجيل الخروج')};
+(async()=>{await loadPublicStats(true);await refreshSession();await updateUnreadBadge();await loadAds();const m=location.hash.match(/^#ad-(\d+)$/);if(m)openDetails(Number(m[1]))})();
