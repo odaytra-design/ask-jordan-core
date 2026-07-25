@@ -1,11 +1,92 @@
-{
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "ask-jordan-core",
-  "main": "./src/index.js",
-  "compatibility_date": "2026-07-25",
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
-  }
-}
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>اسأل الأردن — سوق الأردن بالذكاء الاصطناعي</title>
+  <meta name="description" content="اسأل الأردن: سوق ذكي للبحث والبيع في جميع محافظات الأردن." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="topbar v2-topbar">
+  <a class="brand" href="#" aria-label="العودة للرئيسية"><span class="logo">JO</span><div><h1>Ask Jordan</h1><p>اسأل... والباقي علينا</p></div></a>
+  <div class="top-actions"><button id="adminBtn" class="ghost" hidden>لوحة المشرف</button><button id="notificationsBtn" class="ghost notifications-nav" aria-label="الإشعارات">🔔 <span id="notificationBadge" class="message-badge" hidden>0</span></button><button id="messagesBtn" class="ghost messages-nav">الرسائل <span id="messageBadge" class="message-badge" hidden>0</span></button><button id="accountBtn" class="ghost">حسابي</button><button id="addBtn" class="primary add-ad-cta">+ أضف إعلان مجانًا</button></div>
+</header>
+<section class="growth-strip compact-growth" aria-label="إحصاءات المنصة">
+  <div><span>👁️</span><strong id="visitCount">0</strong><small>زيارة</small></div>
+  <div><span>📦</span><strong id="activeAdCount">0</strong><small>إعلان نشط</small></div>
+  <div><span>👥</span><strong id="userCount">0</strong><small>مستخدم</small></div>
+  <div><span>🔍</span><strong id="searchCount">0</strong><small>عملية بحث</small></div>
+</section>
+<main class="chat-shell v2-shell">
+  <section class="welcome v2-hero">
+    <div class="hero-badge">🇯🇴 السوق الذكي للأردن</div>
+    <h2>ماذا تريد اليوم؟</h2>
+    <p>احكي طلبك بطريقتك، وأنا أسألك الأسئلة الصح وأرتّب لك أفضل النتائج.</p>
+    <form id="searchForm" class="composer hero-composer">
+      <input id="searchInput" autocomplete="off" placeholder="اكتب مثلًا: بدي سيارة أوتوماتيك في إربد أقل من 10 آلاف" />
+      <button aria-label="إرسال">➤</button>
+    </form>
+    <div class="quick-prompts"><button type="button" data-prompt="بدي سيارة">🚗 بدي سيارة</button><button type="button" data-prompt="بدي آيفون أقل من 300 دينار في عمان">📱 آيفون أقل من 300</button><button type="button" data-prompt="شقق للإيجار في الزرقاء">🏠 شقق للإيجار</button><button type="button" data-prompt="بدي أبيع">➕ بدي أبيع</button></div>
+    <section id="buyerAssistant" class="buyer-assistant" aria-live="polite">
+      <div class="buyer-assistant-top"><span class="assistant-avatar">AJ</span><div><strong>مساعد الشراء</strong><small>أجاوبك سؤالًا سؤالًا حتى أوصلك لأفضل النتائج</small></div><button id="resetBuyerFlow" type="button" class="ghost mini" hidden>بحث جديد</button></div>
+      <div id="buyerConversation" class="buyer-conversation"><div class="buyer-message assistant">مرحبًا 👋 اكتب ما تبحث عنه، مثل: <strong>بدي سيارة</strong>.</div></div>
+      <div id="buyerChoices" class="buyer-choices" hidden></div>
+    </section>
+    <button type="button" class="free-ad-cta" id="heroAddBtn"><strong>انشر إعلانك مجانًا</strong><span>يستغرق أقل من دقيقة ←</span></button>
+  </section>
+
+  <section class="category-section">
+    <div class="section-heading"><div><span class="eyebrow">تصفّح بسرعة</span><h3>الأقسام الأكثر طلبًا</h3></div></div>
+    <div class="category-grid">
+      <button type="button" data-prompt="سيارات"><span>🚗</span><strong>سيارات</strong></button>
+      <button type="button" data-prompt="عقارات"><span>🏠</span><strong>عقارات</strong></button>
+      <button type="button" data-prompt="موبايلات"><span>📱</span><strong>موبايلات</strong></button>
+      <button type="button" data-prompt="وظائف"><span>💼</span><strong>وظائف</strong></button>
+      <button type="button" data-prompt="أثاث"><span>🛋️</span><strong>أثاث</strong></button>
+      <button type="button" data-prompt="خدمات"><span>🛠️</span><strong>خدمات</strong></button>
+    </div>
+  </section>
+
+  <section id="liveActivitySection" class="live-activity-section" hidden>
+    <div class="section-heading"><div><span class="live-dot"></span><span class="eyebrow">نشاط المنصة</span><h3>شو بصير الآن؟</h3></div></div>
+    <div id="liveActivity" class="live-activity"></div>
+  </section>
+
+  <section id="featuredSection" class="featured-section" hidden>
+    <div class="section-heading"><div><span class="eyebrow">⭐ عروض مميزة</span><h3>إعلانات تستحق المشاهدة</h3></div><button type="button" id="showAllAdsBtn" class="ghost">عرض الكل</button></div>
+    <div id="featuredAds" class="featured-grid"></div>
+  </section>
+
+  <section id="conversation" class="conversation v2-conversation">
+    <div class="conversation-heading"><div><span class="eyebrow">أحدث السوق</span><h3>آخر الإعلانات</h3></div></div>
+    <div class="assistant-bubble">أهلًا فيك 👋 احكيلي شو بدك، مثلاً: <strong>بدي سيارة أقل من 7000 في إربد</strong>.</div><div id="assistantReply" class="assistant-bubble smart-reply" hidden></div>
+    <section id="status" class="status"></section>
+    <section id="results" class="results-list"></section>
+  </section>
+</main>
+<dialog id="authDialog"><form id="authForm" class="panel"><button type="button" class="close" data-close="authDialog">×</button><h3 id="authTitle">تسجيل الدخول</h3><label>رقم الهاتف<input name="phone" inputmode="numeric" required placeholder="07XXXXXXXX" /></label><label>كلمة المرور<input name="password" type="password" minlength="8" required /></label><label id="nameField" hidden>الاسم<input name="name" /></label><button id="authSubmit" class="primary wide">دخول</button><button id="toggleAuth" type="button" class="ghost wide">إنشاء حساب جديد</button><p class="hint">نستخدم رقمك كهوية تسجيل داخلية ولا يظهر للعامة إلا داخل إعلانك.</p></form></dialog>
+<dialog id="adDialog"><form id="adForm" class="panel"><button type="button" class="close" data-close="adDialog">×</button><h3 id="adDialogTitle">إضافة إعلان</h3><section class="seller-assistant seller-wizard"><div class="seller-assistant-head"><div><strong>مساعد البيع الذكي</strong><p>اكتب إعلانك دفعة واحدة أو جاوبني خطوة بخطوة.</p></div><span>✨</span></div><div id="sellerConversation" class="seller-conversation"><div class="seller-message assistant">شو بدك تبيع اليوم؟</div></div><div id="sellerChoices" class="seller-choices"></div><div class="seller-wizard-input"><input id="sellerWizardInput" type="text" placeholder="اكتب جوابك هنا"><button id="sellerWizardSend" type="button" class="primary">إرسال</button></div><details class="seller-quick-fill"><summary>أو اكتب الإعلان كاملًا مرة واحدة</summary><textarea id="sellerPrompt" rows="3" placeholder="مثال: بدي أبيع آيفون 14 برو 256 جيجا، نظيف جدًا، بـ 450 دينار في إربد الحي الشرقي"></textarea><div class="seller-assistant-actions"><button id="generateAdBtn" type="button" class="primary">تعبئة الإعلان تلقائيًا</button><button id="clearDraftBtn" type="button" class="ghost">مسح المسودة</button></div></details><p id="sellerAssistantStatus" class="hint"></p><section id="aiAdResult" class="ai-ad-result" hidden><div class="ai-score-head"><strong>جودة المسودة</strong><span id="aiQualityScore">0/100</span></div><div class="ai-score-track"><i id="aiQualityBar"></i></div><div id="aiExtractedMeta" class="ai-extracted-meta"></div><div id="aiTags" class="ai-tags"></div><ul id="aiQualityTips" class="ai-quality-tips"></ul></section><section class="ai-polish-tools"><div class="ai-polish-head"><div><strong>✨ استوديو تحسين الإعلان</strong><p>حسّن النص، قيّم الجودة، ترجم، وجهّز ظهور Google.</p></div><span>AI</span></div><div class="ai-polish-actions"><button id="improveAdBtn" type="button" class="primary">تحسين الإعلان</button><button id="scoreAdBtn" type="button" class="ghost">تقييم الجودة</button><button id="translateAdBtn" type="button" class="ghost">ترجمة للإنجليزية</button><button id="seoAdBtn" type="button" class="ghost">إنشاء SEO</button></div><p id="aiPolishStatus" class="hint"></p><section id="aiPolishResult" class="ai-polish-result" hidden><div id="aiPolishSummary"></div><div id="seoPreview" class="seo-preview" hidden><small>معاينة Google</small><strong id="seoTitle"></strong><span id="seoSlug"></span><p id="seoDescription"></p></div></section></section></section><label>التصنيف<select name="category" required><option>موبايلات</option><option>سيارات</option><option>عقارات</option><option>وظائف</option><option>أثاث</option><option>أجهزة كهربائية</option><option>خدمات</option><option>متفرقات</option></select></label><label>اسم المنتج<input name="title" required maxlength="100" placeholder="مثال: آيفون 13 برو ماكس" /></label><div class="two"><label>السعر<input name="price" type="number" min="0" step="0.01" placeholder="بالدينار" /></label><label>المحافظة<select name="governorate" required><option>عمان</option><option>إربد</option><option>الزرقاء</option><option>البلقاء</option><option>المفرق</option><option>جرش</option><option>عجلون</option><option>مادبا</option><option>الكرك</option><option>الطفيلة</option><option>معان</option><option>العقبة</option></select></label></div><label>المنطقة<input name="area" required placeholder="الحي أو المدينة" /></label><label>تفاصيل المنتج<textarea name="description" rows="4" required placeholder="اكتب أهم المواصفات والحالة"></textarea></label><label>الصور (حتى 5)<input id="adImagesInput" name="images" type="file" accept="image/*" multiple /></label>
+<div class="vision-actions"><button id="analyzeImagesBtn" type="button" class="primary">📷 تحليل الصور بالذكاء الاصطناعي</button><span id="visionStatus" class="hint"></span></div>
+<div id="duplicateImageWarning" class="duplicate-image-warning" hidden></div>
+<div id="imagePreview" class="image-preview"></div>
+<section id="smartPricingResult" class="smart-pricing-result" hidden>
+  <div class="pricing-title"><strong>💰 مستشار السعر الذكي</strong><span id="pricingConfidence"></span></div>
+  <div class="pricing-grid"><div><small>أقل سعر مشابه</small><strong id="pricingMin">—</strong></div><div><small>متوسط السوق</small><strong id="pricingAvg">—</strong></div><div><small>أعلى سعر مشابه</small><strong id="pricingMax">—</strong></div><div><small>بيع سريع</small><strong id="pricingQuick">—</strong></div></div>
+  <p id="pricingNote" class="hint"></p>
+</section><section id="moderationResult" class="moderation-result" hidden><div class="moderation-head"><strong>فحص أمان الإعلان</strong><span id="trustScoreBadge">--</span></div><p id="moderationSummary"></p><ul id="moderationReasons"></ul><div id="duplicateAdNotice" class="duplicate-ad-notice" hidden></div></section><label>رقم الهاتف<input name="phone" inputmode="numeric" required placeholder="07XXXXXXXX" /></label><p class="hint">اترك السعر فارغًا إذا كان قابلًا للتفاوض.</p><p id="adImagesHint" class="hint" hidden>رفع صور جديدة يضيفها إلى الصور الحالية.</p><p id="publishStatus" class="publish-status" hidden></p><button id="adSubmit" class="primary wide">نشر الإعلان</button></form></dialog>
+<dialog id="accountDialog"><section class="panel"><button type="button" class="close" data-close="accountDialog">×</button><h3>حسابي</h3><p id="identity"></p><section class="account-section"><h4>لوحة الأداء</h4><div id="sellerDashboard" class="seller-dashboard"></div><p class="hint">الإحصاءات محفوظة على هذا الجهاز في هذا الإصدار.</p></section><section class="account-section"><h4>إعلاناتي</h4><div id="myAds"></div></section><section class="account-section"><h4>عمليات البحث المحفوظة</h4><div id="savedSearches" class="saved-search-list"></div></section><section class="account-section"><h4>المفضلة</h4><p id="favoriteSummary" class="hint"></p><div id="favoriteAds" class="favorite-account-list"></div></section><button id="logoutBtn" class="danger wide">تسجيل الخروج</button></section></dialog>
+<dialog id="detailsDialog"><section class="panel detail-panel"><button type="button" class="close" data-close="detailsDialog">×</button><div class="gallery"><img id="detailImage" alt=""><div id="detailPlaceholder" class="placeholder">📦</div><button id="prevImage" class="gallery-nav prev" type="button">‹</button><button id="nextImage" class="gallery-nav next" type="button">›</button><span id="detailCounter" class="gallery-count"></span></div><h3 id="detailTitle"></h3><div id="detailPrice" class="price"></div><div id="detailMeta" class="meta"></div><p id="detailDescription" class="detail-description"></p><div class="detail-actions"><a id="detailCall">اتصال</a><a id="detailWhatsapp" target="_blank" rel="noopener">واتساب</a><button id="detailShare" type="button">مشاركة</button><button id="detailFavorite" type="button">♡ حفظ</button><button id="detailMessage" type="button" class="primary">💬 مراسلة البائع</button><button id="detailSeller" type="button">ملف البائع</button><button id="detailReport" type="button" class="report-button">إبلاغ</button></div><section class="related-section"><h4>إعلانات مشابهة</h4><div id="relatedAds" class="related-ads"></div></section></section></dialog>
+<dialog id="sellerDialog"><section class="panel seller-panel"><button type="button" class="close" data-close="sellerDialog">×</button><h3 id="sellerName">البائع</h3><p id="sellerMeta" class="meta"></p><div id="sellerActions" class="seller-actions"></div><h4>إعلانات البائع</h4><div id="sellerAds" class="seller-ads"></div></section></dialog>
+
+<dialog id="notificationsDialog"><section class="panel notifications-panel"><button type="button" class="close" data-close="notificationsDialog">×</button><div class="notifications-head"><div><h3>الإشعارات</h3><p class="hint">رسائل جديدة وإعلانات مطابقة لعمليات البحث المحفوظة.</p></div><button id="markAllNotifications" type="button" class="ghost">تحديد الكل كمقروء</button></div><div id="notificationsList" class="notifications-list"></div></section></dialog>
+
+<dialog id="messagesDialog"><section class="panel messages-panel"><button type="button" class="close" data-close="messagesDialog">×</button><div class="messages-head"><div><h3>الرسائل</h3><p class="hint">تواصل مع البائعين والمشترين داخل Ask Jordan.</p></div></div><div class="messages-layout"><aside><div id="conversationList" class="conversation-list"></div></aside><section class="chat-pane"><div id="chatEmpty" class="chat-empty">اختر محادثة لعرض الرسائل.</div><div id="chatActive" hidden><div id="chatHeader" class="chat-header"></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" class="chat-form"><textarea id="chatInput" rows="2" maxlength="1500" placeholder="اكتب رسالتك..." required></textarea><button class="primary" type="submit">إرسال</button></form></div></section></div></section></dialog>
+
+<dialog id="promotionDialog"><form id="promotionForm" class="panel"><button type="button" class="close" data-close="promotionDialog">×</button><h3>روّج إعلانك</h3><p class="hint">اختر الباقة، ثم أرسل الطلب. سنفتح واتساب لإتمام الدفع وتفعيل الإعلان.</p><input type="hidden" name="ad_id" id="promotionAdId"><label>الإعلان<input id="promotionAdTitle" disabled></label><label>الباقة<select name="plan" required><option value="day">يوم واحد — 1 د.أ</option><option value="week">أسبوع — 5 د.أ</option><option value="month">شهر — 15 د.أ</option></select></label><button class="primary wide" type="submit">إرسال طلب الترويج</button><p id="promotionStatus" class="publish-status" hidden></p></form></dialog>
+<dialog id="adminDialog"><section class="panel admin-panel admin-pro"><button type="button" class="close" data-close="adminDialog">×</button><header class="admin-pro-head"><div><span class="admin-eyebrow">ASK JORDAN CONTROL CENTER</span><h3>لوحة القيادة</h3><p class="hint">نظرة مباشرة على حالة المنصة وأهم ما يحتاج تدخلك.</p></div><div class="admin-head-actions"><span id="adminLastUpdated" class="admin-updated">—</span><button id="adminRefreshBtn" type="button" class="ghost">↻ تحديث</button><span class="admin-badge">ADMIN</span></div></header><div id="adminAlertStrip" class="admin-alert-strip" hidden></div><div id="adminStats" class="admin-kpi-grid"><div class="admin-skeleton"></div><div class="admin-skeleton"></div><div class="admin-skeleton"></div><div class="admin-skeleton"></div></div><div class="admin-dashboard-grid"><section class="admin-card admin-chart-card"><div class="admin-card-title"><div><h4>نشاط آخر 7 أيام</h4><p>الإعلانات والمستخدمون الجدد</p></div><span>مباشر</span></div><div id="adminActivityChart" class="admin-mini-chart"></div></section><section class="admin-card"><div class="admin-card-title"><div><h4>صحة الذكاء الاصطناعي</h4><p>حالة خدمة OpenAI</p></div></div><div id="adminAIHealth" class="admin-ai-health"><p>جاري الفحص...</p></div></section><section class="admin-card admin-wide"><div class="admin-card-title"><div><h4>آخر النشاطات</h4><p>أحدث العمليات على المنصة</p></div></div><div id="adminLiveActivity" class="admin-live-list"></div></section><section class="admin-card"><div class="admin-card-title"><div><h4>توزيع المحافظات</h4><p>حسب الإعلانات الحالية</p></div></div><div id="adminGovernorates" class="admin-ranking"></div></section><section class="admin-card"><div class="admin-card-title"><div><h4>إجراءات سريعة</h4><p>وصول مباشر للمهام اليومية</p></div></div><div class="admin-quick-actions"><button type="button" data-admin-jump="reports">🚨 مراجعة البلاغات</button><button type="button" data-admin-jump="ads">📢 إدارة الإعلانات</button><button type="button" data-admin-jump="promotions">💎 طلبات الترويج</button><button type="button" data-admin-jump="users">👥 المستخدمون</button></div></section></div><section id="adminPromotionsSection" class="admin-section"><h4>طلبات الترويج</h4><div id="adminPromotions" class="admin-list"></div></section><section id="adminReportsSection" class="admin-section"><h4>البلاغات</h4><div id="adminReports" class="admin-list"></div></section><section id="adminAdsSection" class="admin-section"><h4>إدارة الإعلانات والمراجعة الذكية</h4><div id="adminAds" class="admin-list"></div></section><section id="adminUsersSection" class="admin-section"><h4>المستخدمون</h4><div id="adminUsers" class="admin-list"></div></section></section></dialog>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

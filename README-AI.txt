@@ -1,19 +1,19 @@
-ASK JORDAN — Worker + OpenAI
+Ask Jordan v2.7.0 — AI Agent + Saved Search Alerts
 
-هيكل الرفع إلى جذر GitHub:
-public/
-src/index.js
-wrangler.jsonc
-package.json
+- OpenAI search parser
+- AI Agent ranks real marketplace ads
+- Natural Jordanian assistant reply based only on actual ads
+- Smart alternative query when no result exists
+- AI seller assistant
+- Save any search from the results
+- Account dashboard shows current and newly matched ads
+- Run or delete saved searches
 
-Cloudflare deploy command:
-npx wrangler deploy
-
-المتغير السري المطلوب:
+Cloudflare Secret required:
 OPENAI_API_KEY
 
-اختبار الخدمة بعد النشر:
-GET /api/ai
-يجب أن يعيد keyConfigured: true
+Optional:
+OPENAI_MODEL=gpt-4o-mini
 
-لا تضع مفتاح OpenAI داخل GitHub أو config.js.
+Database upgrade required:
+Run upgrade-v2.7.0.sql once in Supabase SQL Editor.
